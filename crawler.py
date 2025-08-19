@@ -75,6 +75,7 @@ def fetch_with_jina(url):
     headers['X-Engine'] = 'browser'
     headers['X-Return-Format'] = 'markdown'
     headers['X-No-Cache'] = 'true'
+    headers['X-Retain-Images'] = 'none'  # Remove images for cleaner RAG content
 
     # Wait for main content to load before processing (helps with dynamic content)
     headers['X-Wait-For-Selector'] = 'main, .elementor-widget-container, .elementor-section'
