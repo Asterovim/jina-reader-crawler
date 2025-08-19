@@ -1,0 +1,12 @@
+# Environment variables
+.env
+
+# Virtual environments
+venv/
+
+# Crawler results
+crawl-result/
+
+# Python
+__pycache__/
+*.py[cod]
