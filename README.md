@@ -1,49 +1,75 @@
 # Jina Reader Sitemap Crawler
 
-Minimal sitemap crawler using Jina Reader API to convert web pages to markdown for RAG.
+**Unofficial open-source project** - Convert sitemaps to clean markdown for RAG using Jina Reader API.
 
-## Setup
+> ⚠️ **Disclaimer**: This is an independent project with no affiliation to Jina AI.
 
-1. Create and activate virtual environment:
+## Quick Start
+
 ```bash
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or
-venv\Scripts\activate     # Windows
-```
-
-2. Install dependencies:
-```bash
+# Clone and setup
+git clone https://github.com/Asterovim/jina-reader-crawler.git
+cd jina-reader-crawler
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-```
 
-3. Copy and configure environment:
-```bash
+# Configure
 cp .env.example .env
-# Edit .env with your settings
-```
+# Edit .env with your sitemap URL and Jina API key
 
-4. Run the crawler:
-```bash
+# Run
 python crawler.py
 ```
 
-## Configuration (.env)
+## Features
 
-- `SITEMAP_URL` - Required: URL of sitemap.xml to crawl
-- `JINA_API_KEY` - Required: API key for optimal performance (get at https://jina.ai/reader/)
-- `CSS_SELECTOR` - Optional: Remove unwanted elements (e.g., `.ads,.sidebar`)
-- `OUTPUT_DIR` - Optional: Output directory (default: `output`)
-- `RATE_LIMIT_DELAY` - Auto-configured based on API key presence
+- ✅ **Clean markdown output** - Optimized for RAG/LLM ingestion
+- ✅ **Smart content filtering** - Remove ads, headers, footers via CSS selectors
+- ✅ **EU compliance** - Uses Jina's European servers
+- ✅ **Rate limiting** - Auto-configured based on API key tier
+- ✅ **Error handling** - Comprehensive retry logic and reporting
+- ✅ **Metadata preservation** - Title, URL, and structured content
 
-## Output
+## Configuration
 
-Markdown files saved as `{domain}_{path}.md` with metadata headers.
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SITEMAP_URL` | ✅ | Sitemap XML URL or single page URL |
+| `JINA_API_KEY` | ✅ | Get free key at [jina.ai/reader](https://jina.ai/reader/) |
+| `CSS_SELECTOR` | ❌ | Remove elements (e.g., `.ads,.sidebar,.footer`) |
+| `OUTPUT_DIR` | ❌ | Output directory (default: `output`) |
 
-## Rate Limits (Auto-Configured)
+## Output Structure
 
-- **Without API key**: 20 RPM (3.5s delay)
-- **With API key**: 500 RPM (0.13s delay) ⚡
-- **Premium API key**: 5000 RPM
+```
+crawl-result/
+└── your-output-dir/
+    ├── domain_page1.md
+    ├── domain_page2.md
+    ├── crawl_summary.txt
+    └── failed_urls.txt (if any failures)
+```
 
-The crawler automatically detects your API key and optimizes rate limits accordingly.
+Each markdown file includes:
+```markdown
+Title: Page Title
+URL Source: https://example.com/page
+Markdown Content:
+# Clean content without ads/navigation
+```
+
+## Rate Limits
+
+| API Tier | Rate Limit | Auto Delay |
+|----------|------------|------------|
+| Free | 20 RPM | 3.5s |
+| Paid | 500 RPM | 0.13s |
+| Premium | 5000 RPM | Custom |
+
+## Contributing
+
+Contributions welcome! This is an open-source project for the community.
+
+## License
+
+Apache License 2.0 - See LICENSE file for details.
