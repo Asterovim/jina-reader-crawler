@@ -59,8 +59,8 @@ def get_urls_from_sitemap(sitemap_url):
         return []
 
 def fetch_with_jina(url):
-    """Fetch URL content using Jina Reader API"""
-    jina_url = "https://r.jina.ai/"
+    """Fetch URL content using Jina Reader API (EU compliance server)"""
+    jina_url = "https://eu-r-beta.jina.ai/"
 
     headers = {}
     # Always use API key if configured (not placeholder)
@@ -69,16 +69,22 @@ def fetch_with_jina(url):
     if CSS_SELECTOR:
         headers['X-Remove-Selector'] = CSS_SELECTOR
 
-    # Essential headers for JSON API mode
+    # Essential headers for JSON API mode with EU compliance
     headers['Accept'] = 'application/json'
     headers['Content-Type'] = 'application/json'
     headers['X-Engine'] = 'browser'
     headers['X-Return-Format'] = 'markdown'
     headers['X-No-Cache'] = 'true'
     headers['X-Retain-Images'] = 'none'  # Remove images for cleaner RAG content
+    #headers['X-Respond-With'] = 'readerlm-v2'  # Use more powerful ReaderLM-v2 model
+    headers['X-Timeout'] = '1000'  # Extended timeout for complex pages
 
     # Wait for main content to load before processing (helps with dynamic content)
-    headers['X-Wait-For-Selector'] = 'main, .elementor-widget-container, .elementor-section'
+    # Use CSS_SELECTOR but invert the logic: wait for content, not exclusions
+    if CSS_SELECTOR:
+        headers['X-Wait-For-Selector'] = CSS_SELECTOR
+    else:
+        headers['X-Wait-For-Selector'] = 'main, .elementor-widget-container, .elementor-section'
 
     # JSON payload with URL
     payload = {"url": url}
