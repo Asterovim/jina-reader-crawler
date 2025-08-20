@@ -6,6 +6,8 @@ Keep it simple: .env config + single script
 
 import os
 import time
+import random
+import json
 import requests
 import xml.etree.ElementTree as ET
 from urllib.parse import urljoin, urlparse
@@ -18,16 +20,20 @@ load_dotenv()
 # Configuration from .env
 JINA_API_KEY = os.getenv('JINA_API_KEY', '')
 CSS_SELECTOR = os.getenv('CSS_SELECTOR', '')
+WAIT_FOR_SELECTOR = os.getenv('WAIT_FOR_SELECTOR', '')
+EU_COMPLIANCE = os.getenv('EU_COMPLIANCE', 'true').lower() == 'true'
+NO_CACHE = os.getenv('NO_CACHE', 'false').lower() == 'true'
 SITEMAP_URL = os.getenv('SITEMAP_URL', '')
 OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'output')
 
-# Smart rate limiting based on API key presence
-if JINA_API_KEY and JINA_API_KEY != 'your_jina_api_key_here':
-    # With API key: 500 RPM limit, use 0.13s delay (~460 RPM safe)
-    RATE_LIMIT_DELAY = float(os.getenv('RATE_LIMIT_DELAY', '0.13'))
-else:
-    # Without API key: 20 RPM limit, use 3.5s delay (~17 RPM safe)
-    RATE_LIMIT_DELAY = float(os.getenv('RATE_LIMIT_DELAY', '3.5'))
+# Simple anti-detection delay settings
+MIN_DELAY = float(os.getenv('MIN_DELAY', '3'))
+MAX_DELAY = float(os.getenv('MAX_DELAY', '6'))
+REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '120'))
+RETRY_COUNT = int(os.getenv('RETRY_COUNT', '2'))
+CRAWLER_TIMEOUT = int(os.getenv('CRAWLER_TIMEOUT', '0'))
+
+
 
 def get_urls_from_sitemap(sitemap_url):
     """Extract URLs from sitemap.xml or handle single URL"""
@@ -58,95 +64,126 @@ def get_urls_from_sitemap(sitemap_url):
         print(f"Error parsing sitemap: {e}")
         return []
 
+
+
 def fetch_with_jina(url):
-    """Fetch URL content using Jina Reader API (EU compliance server)"""
-    jina_url = "https://eu-r-beta.jina.ai/"
+    """Fetch URL content using Jina Reader API"""
+    # Choose server based on EU compliance setting
+    if EU_COMPLIANCE:
+        jina_url = "https://eu-r-beta.jina.ai/"
+    else:
+        jina_url = "https://r.jina.ai/"
 
     headers = {}
     # Always use API key if configured (not placeholder)
     if JINA_API_KEY and JINA_API_KEY != 'your_jina_api_key_here':
         headers['Authorization'] = f'Bearer {JINA_API_KEY}'
+
+    # CSS selector to remove unwanted elements
     if CSS_SELECTOR:
         headers['X-Remove-Selector'] = CSS_SELECTOR
 
-    # Essential headers for JSON API mode with EU compliance
+    # Essential headers for JSON API mode
     headers['Accept'] = 'application/json'
     headers['Content-Type'] = 'application/json'
-    headers['X-Engine'] = 'browser'
-    headers['X-Return-Format'] = 'markdown'
-    headers['X-No-Cache'] = 'true'
-    headers['X-Retain-Images'] = 'none'  # Remove images for cleaner RAG content
-    #headers['X-Respond-With'] = 'readerlm-v2'  # Use more powerful ReaderLM-v2 model
-    headers['X-Timeout'] = '1000'  # Extended timeout for complex pages
+    headers['X-Timeout'] = '30'  # 30 seconds timeout for complex pages
 
-    # Wait for main content to load before processing (helps with dynamic content)
-    # Use CSS_SELECTOR but invert the logic: wait for content, not exclusions
-    if CSS_SELECTOR:
-        headers['X-Wait-For-Selector'] = CSS_SELECTOR
-    else:
-        headers['X-Wait-For-Selector'] = 'main, .elementor-widget-container, .elementor-section'
+    # Cache control based on NO_CACHE setting
+    if NO_CACHE:
+        headers['X-No-Cache'] = 'true'
+
+    # Wait for content to load before processing (helps with dynamic content)
+    if WAIT_FOR_SELECTOR:
+        headers['X-Wait-For-Selector'] = WAIT_FOR_SELECTOR
 
     # JSON payload with URL
     payload = {"url": url}
 
-    try:
-        print(f"Fetching: {url}")
-        import json
-        response = requests.post(jina_url, headers=headers, json=payload, timeout=60)
+    print(f"Fetching: {url}")
 
-        # Handle specific error cases
-        if response.status_code == 401:
-            print(f"❌ API Key invalid or expired. Please check your JINA_API_KEY in .env")
-            return None
-        elif response.status_code == 429:
-            print(f"⚠️ Rate limit exceeded. Consider increasing RATE_LIMIT_DELAY")
-            return None
-
-        response.raise_for_status()
-
-        # Parse JSON response
+    # Simple retry logic for timeouts
+    for attempt in range(RETRY_COUNT + 1):
         try:
-            data = response.json()
-        except json.JSONDecodeError:
-            print(f"❌ Invalid JSON response for {url}")
-            return None
+            response = requests.post(jina_url, headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
 
-        # Check for cached snapshot warning and retry if found
-        warning = data.get('warning', '')
-        if "cached snapshot" in warning.lower():
-            print(f"⚠️ Cached snapshot detected, retrying with fresh fetch...")
-            time.sleep(1)  # Small delay before retry
-            response = requests.post(jina_url, headers=headers, json=payload, timeout=60)
-            response.raise_for_status()
+            # Generic retry logic: anything not 2xx/3xx gets retried
+            if response.status_code >= 400:
+                if attempt < RETRY_COUNT:
+                    print(f"⚠️ HTTP {response.status_code} error (attempt {attempt + 1}/{RETRY_COUNT + 1}). Retrying...")
+                    time.sleep(2)
+                    continue
+                else:
+                    print(f"❌ HTTP {response.status_code} error after {RETRY_COUNT + 1} attempts")
+                    return None
 
+            # Success! Parse JSON response
             try:
                 data = response.json()
-                warning = data.get('warning', '')
-                # If still cached after retry, it's a persistent issue
-                if "cached snapshot" in warning.lower():
-                    print(f"❌ Still getting cached content after retry for {url}")
-                    return None
             except json.JSONDecodeError:
-                print(f"❌ Invalid JSON response on retry for {url}")
+                print(f"❌ Invalid JSON response for {url}")
                 return None
 
-        # Extract content and metadata from nested data structure
-        data_content = data.get('data', {})
-        title = data_content.get('title', '')
-        content = data_content.get('content', '')
-        url_source = data_content.get('url', url)
+            # Check for cached snapshot warning and retry if found
+            warning = data.get('warning', '')
+            if "cached snapshot" in warning.lower() and not NO_CACHE:
+                print(f"⚠️ Cached snapshot detected, retrying with fresh fetch...")
+                # Add X-No-Cache header for this retry
+                retry_headers = headers.copy()
+                retry_headers['X-No-Cache'] = 'true'
 
-        # Format with metadata like before
-        formatted_content = f"Title: {title}\n\nURL Source: {url_source}\n\nMarkdown Content:\n{content}"
+                try:
+                    time.sleep(1)  # Small delay before retry
+                    response = requests.post(jina_url, headers=retry_headers, json=payload, timeout=REQUEST_TIMEOUT)
+                    response.raise_for_status()
 
-        return formatted_content
+                    try:
+                        data = response.json()
+                        warning = data.get('warning', '')
+                        # If still cached after retry, it's a persistent issue
+                        if "cached snapshot" in warning.lower():
+                            print(f"❌ Still getting cached content after retry for {url}")
+                            return None
+                    except json.JSONDecodeError:
+                        print(f"❌ Invalid JSON response on retry for {url}")
+                        return None
+                except requests.exceptions.RequestException as e:
+                    print(f"❌ Error on cache retry: {e}")
+                    return None
 
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching {url}: {e}")
-        return None
-    except Exception as e:
-        print(f"Unexpected error fetching {url}: {e}")
-        return None
+            # Extract content and metadata from nested data structure
+            data_content = data.get('data', {})
+            title = data_content.get('title', '')
+            content = data_content.get('content', '')
+            url_source = data_content.get('url', url)
+
+            # Format with metadata like before
+            formatted_content = f"Title: {title}\n\nURL Source: {url_source}\n\nMarkdown Content:\n{content}"
+
+            return formatted_content
+
+        except requests.exceptions.Timeout:
+            if attempt < RETRY_COUNT:
+                print(f"⚠️ Timeout (attempt {attempt + 1}/{RETRY_COUNT + 1}). Retrying...")
+                time.sleep(2)  # Small delay before retry
+                continue
+            else:
+                print(f"❌ Timeout after {RETRY_COUNT + 1} attempts")
+                return None
+        except requests.exceptions.ConnectionError:
+            if attempt < RETRY_COUNT:
+                print(f"⚠️ Connection error (attempt {attempt + 1}/{RETRY_COUNT + 1}). Retrying...")
+                time.sleep(2)  # Small delay before retry
+                continue
+            else:
+                print(f"❌ Connection error after {RETRY_COUNT + 1} attempts")
+                return None
+
+
+
+    # If we get here, all retries failed
+    return None
+
+
 
 def save_markdown(url, content, output_dir):
     """Save content as markdown file"""
@@ -209,13 +246,21 @@ def main():
 
     # Check API key status
     has_api_key = JINA_API_KEY and JINA_API_KEY != 'your_jina_api_key_here'
-    rpm_limit = "500 RPM" if has_api_key else "20 RPM"
 
     print("🚀 Starting Jina Reader Sitemap Crawler")
     print(f"URL/Sitemap: {SITEMAP_URL}")
     print(f"Output: crawl-result/{OUTPUT_DIR}")
     print(f"API Key: {'✅ Configured' if has_api_key else '❌ Not configured (using free tier)'}")
-    print(f"Rate limit: {rpm_limit} ({RATE_LIMIT_DELAY}s delay)")
+    print(f"EU Compliance: {'✅ Enabled' if EU_COMPLIANCE else '❌ Disabled'}")
+    print(f"No Cache: {'✅ Enabled' if NO_CACHE else '❌ Disabled'}")
+    print(f"CSS Selector: {CSS_SELECTOR if CSS_SELECTOR else '❌ Not set'}")
+    print(f"Wait For Selector: {WAIT_FOR_SELECTOR if WAIT_FOR_SELECTOR else '❌ Not set'}")
+    print(f"Delay: {MIN_DELAY}-{MAX_DELAY}s random between requests")
+    print(f"Request timeout: {REQUEST_TIMEOUT}s, Retries: {RETRY_COUNT}")
+    if CRAWLER_TIMEOUT > 0:
+        print(f"Crawler timeout: {CRAWLER_TIMEOUT}s ({CRAWLER_TIMEOUT//3600}h {(CRAWLER_TIMEOUT%3600)//60}m)")
+    else:
+        print(f"Crawler timeout: No limit")
     print("-" * 50)
 
     # Get URLs from sitemap
@@ -224,12 +269,20 @@ def main():
         print("No URLs found. Exiting.")
         return
 
-    # Track results
+    # Track results and timing
     successful_urls = []
     failed_urls = []
+    start_time = time.time()
 
     # Process each URL
     for i, url in enumerate(urls, 1):
+        # Check timeout if set
+        if CRAWLER_TIMEOUT > 0:
+            elapsed_time = time.time() - start_time
+            if elapsed_time > CRAWLER_TIMEOUT:
+                print(f"\n⏰ Crawler timeout reached ({CRAWLER_TIMEOUT}s). Stopping crawl.")
+                print(f"Processed {i-1}/{len(urls)} URLs in {elapsed_time:.0f}s")
+                break
         print(f"\n[{i}/{len(urls)}]", end=" ")
 
         # Fetch content
@@ -242,10 +295,11 @@ def main():
         else:
             failed_urls.append(url)
 
-        # Rate limiting
+        # Simple random delay between requests
         if i < len(urls):  # Don't wait after last URL
-            print(f"Waiting {RATE_LIMIT_DELAY}s...")
-            time.sleep(RATE_LIMIT_DELAY)
+            delay = random.uniform(MIN_DELAY, MAX_DELAY)
+            print(f"Waiting {delay:.1f}s...")
+            time.sleep(delay)
 
     # Generate report
     generate_report(successful_urls, failed_urls, OUTPUT_DIR)
