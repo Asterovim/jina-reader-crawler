@@ -25,6 +25,7 @@ EU_COMPLIANCE = os.getenv('EU_COMPLIANCE', 'true').lower() == 'true'
 NO_CACHE = os.getenv('NO_CACHE', 'false').lower() == 'true'
 SITEMAP_URL = os.getenv('SITEMAP_URL', '')
 OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'output')
+START_FROM_INDEX = int(os.getenv('START_FROM_INDEX', '1'))
 
 # Simple anti-detection delay settings
 MIN_DELAY = float(os.getenv('MIN_DELAY', '3'))
@@ -257,6 +258,7 @@ def main():
     print(f"Wait For Selector: {WAIT_FOR_SELECTOR if WAIT_FOR_SELECTOR else '❌ Not set'}")
     print(f"Delay: {MIN_DELAY}-{MAX_DELAY}s random between requests")
     print(f"Request timeout: {REQUEST_TIMEOUT}s, Retries: {RETRY_COUNT}")
+    print(f"Start from index: {START_FROM_INDEX}")
     if CRAWLER_TIMEOUT > 0:
         print(f"Crawler timeout: {CRAWLER_TIMEOUT}s ({CRAWLER_TIMEOUT//3600}h {(CRAWLER_TIMEOUT%3600)//60}m)")
     else:
@@ -268,6 +270,24 @@ def main():
     if not urls:
         print("No URLs found. Exiting.")
         return
+
+    # Validate START_FROM_INDEX
+    total_urls = len(urls)
+    if START_FROM_INDEX < 1:
+        print(f"Error: START_FROM_INDEX must be >= 1, got {START_FROM_INDEX}")
+        return
+    if START_FROM_INDEX > total_urls:
+        print(f"Error: START_FROM_INDEX ({START_FROM_INDEX}) exceeds total URLs ({total_urls})")
+        return
+
+    # Apply start index if specified
+    if START_FROM_INDEX > 1:
+        skipped_count = START_FROM_INDEX - 1
+        urls = urls[skipped_count:]
+        print(f"📍 Starting from URL #{START_FROM_INDEX} (skipping first {skipped_count} URLs)")
+        print(f"Processing {len(urls)} URLs out of {total_urls} total")
+    else:
+        print(f"Processing all {total_urls} URLs")
 
     # Track results and timing
     successful_urls = []
@@ -281,9 +301,13 @@ def main():
             elapsed_time = time.time() - start_time
             if elapsed_time > CRAWLER_TIMEOUT:
                 print(f"\n⏰ Crawler timeout reached ({CRAWLER_TIMEOUT}s). Stopping crawl.")
-                print(f"Processed {i-1}/{len(urls)} URLs in {elapsed_time:.0f}s")
+                current_url_number = START_FROM_INDEX + i - 2
+                print(f"Processed {i-1}/{len(urls)} URLs (#{START_FROM_INDEX}-#{current_url_number}) in {elapsed_time:.0f}s")
                 break
-        print(f"\n[{i}/{len(urls)}]", end=" ")
+
+        # Display progress with global URL numbering
+        current_url_number = START_FROM_INDEX + i - 1
+        print(f"\n[{current_url_number}/{total_urls}]", end=" ")
 
         # Fetch content
         content = fetch_with_jina(url)
