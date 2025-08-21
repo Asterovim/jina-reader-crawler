@@ -160,8 +160,15 @@ def fetch_with_jina(url):
             content = data_content.get('content', '')
             url_source = data_content.get('url', url)
 
+            # Extract additional metadata
+            description = data_content.get('description', '')
+            metadata = data_content.get('metadata', {})
+            lang = metadata.get('lang', '')
+
+
+
             # Format with metadata like before
-            formatted_content = f"Title: {title}\n\nURL Source: {url_source}\n\nMarkdown Content:\n{content}"
+            formatted_content = f"Title: {title}\n\nURL Source: {url_source}\n\nDescription: {description}\n\nLanguage: {lang}\n\nMarkdown Content:\n{content}"
 
             return formatted_content
 
@@ -190,7 +197,7 @@ def fetch_with_jina(url):
 
 
 def save_markdown(url, content, output_dir):
-    """Save content as markdown file"""
+    """Save content as markdown file with metadata frontmatter"""
     if not content:
         return
 
@@ -206,9 +213,60 @@ def save_markdown(url, content, output_dir):
 
     filepath = crawl_result_dir / filename
 
-    # Save content as-is from Jina Reader (includes Title, URL Source, Markdown Content)
+    # Extract title from content (assuming it starts with "Title: ")
+    lines = content.split('\n')
+    title = ""
+    url_source = ""
+    markdown_content = ""
+
+    # Parse the structured content from Jina Reader
+    description = ""
+    language = ""
+
+    for i, line in enumerate(lines):
+        if line.startswith("Title: "):
+            title = line.replace("Title: ", "").strip()
+        elif line.startswith("URL Source: "):
+            url_source = line.replace("URL Source: ", "").strip()
+        elif line.startswith("Description: "):
+            description = line.replace("Description: ", "").strip()
+        elif line.startswith("Language: "):
+            language = line.replace("Language: ", "").strip()
+        elif line.startswith("Markdown Content:"):
+            # Everything after this line is the actual markdown content
+            markdown_content = '\n'.join(lines[i+1:]).strip()
+            break
+
+    # Generate metadata frontmatter
+    import time
+    # Use Unix timestamp for Dify time field
+    crawl_timestamp = int(time.time())
+
+    # Escape quotes in YAML values
+    def escape_yaml_value(value):
+        if not value:
+            return ""
+        # Replace double quotes with escaped quotes
+        return value.replace('"', '\\"')
+
+    # Create YAML frontmatter with metadata
+    frontmatter = f"""---
+title: "{escape_yaml_value(title)}"
+source_url: "{escape_yaml_value(url_source)}"
+domain: "{escape_yaml_value(domain)}"
+crawl_date: "{crawl_timestamp}"
+description: "{escape_yaml_value(description)}"
+language: "{escape_yaml_value(language)}"
+---
+
+"""
+
+    # Combine frontmatter with markdown content
+    final_content = frontmatter + markdown_content
+
+    # Save content with metadata frontmatter
     with open(filepath, 'w', encoding='utf-8') as f:
-        f.write(content)
+        f.write(final_content)
 
     print(f"Saved: {filepath}")
 
@@ -220,21 +278,15 @@ def generate_report(successful_urls, failed_urls, output_dir):
     # Generate timestamp
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
 
-    # Write failed URLs report (add header if file has content)
+    # Write failed URLs report
     if failed_urls:
         failed_report_path = crawl_result_dir / "failed_urls.txt"
-        # Read existing content
-        existing_content = ""
-        if failed_report_path.exists():
-            with open(failed_report_path, 'r', encoding='utf-8') as f:
-                existing_content = f.read()
-
-        # Rewrite with header
         with open(failed_report_path, 'w', encoding='utf-8') as f:
             f.write(f"# Failed URLs Report\n")
             f.write(f"Generated: {timestamp}\n")
             f.write(f"Total failed: {len(failed_urls)}\n\n")
-            f.write(existing_content)
+            for url in failed_urls:
+                f.write(f"{url}\n")
         print(f"Failed URLs report: {failed_report_path}")
 
     # Write summary report

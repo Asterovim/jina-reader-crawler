@@ -1,8 +1,8 @@
 # Jina Reader Sitemap Crawler
 
-Convert sitemaps to clean markdown using Jina Reader API.
+Convert sitemaps to clean markdown using Jina Reader API, with optional Dify import.
 
-> ⚠️ **Disclaimer**: This is an independent project with no affiliation to Jina AI.
+> ⚠️ **Disclaimer**: This is an independent project with no affiliation to Jina AI or Dify AI.
 
 ## Features
 
@@ -10,88 +10,94 @@ Convert sitemaps to clean markdown using Jina Reader API.
 - **Smart content filtering** - Optional CSS selectors to remove ads, headers, footers
 - **Single URL or sitemap support** - Works with sitemap.xml or individual pages
 - **Resume crawling** - Start from any URL index for large sitemaps or interrupted crawls
-- **Anti-detection crawling** - Random delays between requests (3-6s default)
+- **Anti-detection crawling** - Random delays between requests (10-20s default)
 - **Robust error handling** - Retry logic with timeout management
-- **Metadata preservation** - Title, URL, and structured content
-- **Optional EU compliance** - Can use Jina's European servers (default: enabled)
+- **Metadata preservation** - Title, URL, domain, crawl date in YAML frontmatter
+- **Dify integration** - Direct import to Dify knowledge base with metadata
+- **Optional EU compliance** - Can use Jina's European servers
 
 ## Quick Start
+
+### 1. Crawl websites
 
 ```bash
 git clone https://github.com/Asterovim/jina-reader-crawler.git
 cd jina-reader-crawler
-pip install requests python-dotenv
+pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your sitemap URL
 python crawler.py
 ```
 
-## Configuration
-
-Edit `.env` file:
+### 2. Import to Dify (optional)
 
 ```bash
-SITEMAP_URL=https://example.com/sitemap.xml  # Required
+# Configure Dify settings in .env
+python dify.py
+```
+
+## Configuration
+
+Edit `.env` file with your settings. See `.env.example` for detailed examples.
+
+### Crawler Configuration (Required)
+```bash
+SITEMAP_URL=https://example.com/sitemap.xml  # Required: sitemap or single URL
 JINA_API_KEY=your_key_here                   # Optional (20 RPM without, 500+ with)
-OUTPUT_DIR=output                            # Optional
-CSS_SELECTOR=.ads,.sidebar,footer            # Optional: remove elements
-WAIT_FOR_SELECTOR=main,.content              # Optional: wait for elements
-EU_COMPLIANCE=true                           # Optional: use EU servers
-NO_CACHE=false                               # Optional: force fresh content
-START_FROM_INDEX=1                           # Optional: start from URL index (1-based)
-MIN_DELAY=3                                  # Optional: min delay between requests
-MAX_DELAY=6                                  # Optional: max delay between requests
-REQUEST_TIMEOUT=120                          # Optional: request timeout
-RETRY_COUNT=2                                # Optional: retry attempts
-CRAWLER_TIMEOUT=0                            # Optional: max crawl time (0=unlimited)
+```
+
+### Dify Configuration (Optional)
+```bash
+DIFY_API_KEY=your_dify_api_key_here         # Required for Dify import
+DIFY_DATASET_ID=your_dataset_id_here        # Required for Dify import
+DIFY_BASE_URL=https://api.dify.ai           # Optional: Dify instance URL
+```
+
+### Advanced Options
+```bash
+OUTPUT_DIR=output                            # Output directory
+CSS_SELECTOR=.ads,.sidebar,footer            # Remove unwanted elements
+START_FROM_INDEX=1                           # Resume from specific URL
+MIN_DELAY=10                                 # Min delay between requests (seconds)
+MAX_DELAY=20                                 # Max delay between requests (seconds)
+```
+
+## Project Structure
+
+```
+jina-reader-crawler/
+├── crawler.py              # Main crawler script
+├── dify.py                 # Dify import script
+├── dify/                   # Dify integration modules
+│   ├── __init__.py
+│   ├── client.py           # Dify API client
+│   ├── importer.py         # Import logic
+│   └── metadata.py         # Metadata handling
+├── .env.example            # Configuration template
+├── requirements.txt        # Dependencies
+└── crawl-result/           # Output directory
+    └── output/             # Markdown files with metadata
 ```
 
 ## Output
 
 Files saved to `crawl-result/{OUTPUT_DIR}/`:
-- `domain_page.md` - Clean markdown with title, URL, content
+- `domain_page.md` - Clean markdown with YAML frontmatter metadata
 - `crawl_summary.txt` - Success/failure stats
 - `failed_urls.txt` - Failed URLs (if any)
 
-Each markdown file includes:
+Each markdown file includes YAML frontmatter:
 ```markdown
-Title: Page Title
-URL Source: https://example.com/page
-Markdown Content:
+---
+title: "Page Title"
+source_url: "https://example.com/page"
+domain: "example.com"
+crawl_date: "1755781483"
+description: "Page meta description"
+language: "en"
+---
+
 # Clean content without ads/navigation
-```
-
-## Advanced Usage
-
-### Resume Crawling from Specific Index
-
-For large sitemaps or to resume interrupted crawls:
-
-```bash
-# Start from URL #500 (skip first 499 URLs)
-START_FROM_INDEX=500
-
-# Process URLs 1001-2000 for parallel crawling
-START_FROM_INDEX=1001
-CRAWLER_TIMEOUT=3600  # Stop after 1 hour
-```
-
-### Parallel Processing
-
-Split large sitemaps across multiple instances:
-
-```bash
-# Instance 1: URLs 1-1000
-START_FROM_INDEX=1
-CRAWLER_TIMEOUT=3600
-
-# Instance 2: URLs 1001-2000
-START_FROM_INDEX=1001
-CRAWLER_TIMEOUT=3600
-
-# Instance 3: URLs 2001-3000
-START_FROM_INDEX=2001
-CRAWLER_TIMEOUT=3600
 ```
 
 ## Rate Limits
