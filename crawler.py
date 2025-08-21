@@ -163,7 +163,8 @@ def fetch_with_jina(url):
             # Extract additional metadata
             description = data_content.get('description', '')
             metadata = data_content.get('metadata', {})
-            lang = metadata.get('lang', '')
+            # Only extract language if not using EU compliance (EU API doesn't return metadata)
+            lang = metadata.get('lang', '') if not EU_COMPLIANCE else ''
 
 
 
@@ -250,13 +251,25 @@ def save_markdown(url, content, output_dir):
         return value.replace('"', '\\"')
 
     # Create YAML frontmatter with metadata
-    frontmatter = f"""---
+    # Only include language field if not using EU compliance
+    if not EU_COMPLIANCE and language:
+        frontmatter = f"""---
 title: "{escape_yaml_value(title)}"
 source_url: "{escape_yaml_value(url_source)}"
 domain: "{escape_yaml_value(domain)}"
 crawl_date: "{crawl_timestamp}"
 description: "{escape_yaml_value(description)}"
 language: "{escape_yaml_value(language)}"
+---
+
+"""
+    else:
+        frontmatter = f"""---
+title: "{escape_yaml_value(title)}"
+source_url: "{escape_yaml_value(url_source)}"
+domain: "{escape_yaml_value(domain)}"
+crawl_date: "{crawl_timestamp}"
+description: "{escape_yaml_value(description)}"
 ---
 
 """

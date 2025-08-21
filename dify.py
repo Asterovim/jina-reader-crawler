@@ -39,6 +39,9 @@ DIFY_WEIGHTS = float(os.getenv('DIFY_WEIGHTS', '0.7'))
 OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'output')
 CRAWL_RESULT_DIR = os.getenv('CRAWL_RESULT_DIR', f'crawl-result/{OUTPUT_DIR}')
 
+# EU Compliance setting (affects metadata availability)
+EU_COMPLIANCE = os.getenv('EU_COMPLIANCE', 'false').lower() == 'true'
+
 import requests
 import json
 
@@ -204,9 +207,12 @@ class DifyMetadataImporter:
             ("source_url", "string"),
             ("domain", "string"),
             ("crawl_date", "time"),
-            ("description", "string"),
-            ("language", "string")
+            ("description", "string")
         ]
+
+        # Only add language field if not using EU compliance (EU API doesn't return metadata)
+        if not EU_COMPLIANCE:
+            fields_to_create.append(("language", "string"))
 
         print("🔧 Setting up metadata fields...")
 
