@@ -88,6 +88,9 @@ def fetch_with_jina(url):
     headers['Accept'] = 'application/json'
     headers['Content-Type'] = 'application/json'
     headers['X-Timeout'] = '30'  # 30 seconds timeout for complex pages
+    headers['X-Respond-with'] = 'readerlm-v2' # Use ReaderLM-v2
+    headers['X-Retain-Images'] = 'false' # Don't retain images
+    headers['X-Engine'] = 'browser' # High-quality engine designed to resolve rendering issues and deliver the best content output.
 
     # Cache control based on NO_CACHE setting
     if NO_CACHE:
