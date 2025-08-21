@@ -220,15 +220,21 @@ def generate_report(successful_urls, failed_urls, output_dir):
     # Generate timestamp
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
 
-    # Write failed URLs report
+    # Write failed URLs report (add header if file has content)
     if failed_urls:
         failed_report_path = crawl_result_dir / "failed_urls.txt"
+        # Read existing content
+        existing_content = ""
+        if failed_report_path.exists():
+            with open(failed_report_path, 'r', encoding='utf-8') as f:
+                existing_content = f.read()
+
+        # Rewrite with header
         with open(failed_report_path, 'w', encoding='utf-8') as f:
             f.write(f"# Failed URLs Report\n")
             f.write(f"Generated: {timestamp}\n")
             f.write(f"Total failed: {len(failed_urls)}\n\n")
-            for url in failed_urls:
-                f.write(f"{url}\n")
+            f.write(existing_content)
         print(f"Failed URLs report: {failed_report_path}")
 
     # Write summary report
@@ -297,6 +303,25 @@ def main():
     failed_urls = []
     start_time = time.time()
 
+    # Create output directory and initialize report files
+    crawl_result_dir = Path("crawl-result") / OUTPUT_DIR
+    crawl_result_dir.mkdir(parents=True, exist_ok=True)
+
+    # Initialize empty report files
+    failed_urls_file = crawl_result_dir / "failed_urls.txt"
+    summary_file = crawl_result_dir / "crawl_summary.txt"
+
+    # Create initial summary
+    timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+    with open(summary_file, 'w', encoding='utf-8') as f:
+        f.write(f"# Crawl Summary Report (Live Updates)\n")
+        f.write(f"Started: {timestamp}\n")
+        f.write(f"Total URLs to process: {len(urls)}\n")
+        f.write(f"Processed: 0\n")
+        f.write(f"Successful: 0\n")
+        f.write(f"Failed: 0\n")
+        f.write(f"Success rate: 0.0%\n")
+
     # Process each URL
     for i, url in enumerate(urls, 1):
         # Check timeout if set
@@ -321,6 +346,23 @@ def main():
             successful_urls.append(url)
         else:
             failed_urls.append(url)
+            # Write failed URL immediately
+            with open(failed_urls_file, 'a', encoding='utf-8') as f:
+                f.write(f"{url}\n")
+
+        # Update summary report after each URL
+        total_processed = len(successful_urls) + len(failed_urls)
+        success_rate = (len(successful_urls) / total_processed * 100) if total_processed > 0 else 0.0
+
+        with open(summary_file, 'w', encoding='utf-8') as f:
+            f.write(f"# Crawl Summary Report (Live Updates)\n")
+            f.write(f"Started: {timestamp}\n")
+            f.write(f"Last updated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Total URLs to process: {len(urls)}\n")
+            f.write(f"Processed: {total_processed}\n")
+            f.write(f"Successful: {len(successful_urls)}\n")
+            f.write(f"Failed: {len(failed_urls)}\n")
+            f.write(f"Success rate: {success_rate:.1f}%\n")
 
         # Simple random delay between requests
         if i < len(urls):  # Don't wait after last URL
