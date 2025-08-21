@@ -87,8 +87,8 @@ def fetch_with_jina(url):
     # Essential headers for JSON API mode
     headers['Accept'] = 'application/json'
     headers['Content-Type'] = 'application/json'
-    headers['X-Timeout'] = '30'  # 30 seconds timeout for complex pages
-    headers['X-Retain-Images'] = 'false' # Don't retain images
+    headers['X-Timeout'] = str(REQUEST_TIMEOUT)  # Use REQUEST_TIMEOUT from .env for Jina API timeout
+    headers['X-Retain-Images'] = 'none' # Don't retain images
     headers['X-Engine'] = 'browser' # High-quality engine designed to resolve rendering issues and deliver the best content output.
 
     # Cache control based on NO_CACHE setting
