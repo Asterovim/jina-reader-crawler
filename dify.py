@@ -18,6 +18,7 @@ load_dotenv()
 DIFY_API_KEY = os.getenv('DIFY_API_KEY', '')
 DIFY_DATASET_ID = os.getenv('DIFY_DATASET_ID', '')
 DIFY_BASE_URL = os.getenv('DIFY_BASE_URL', 'https://api.dify.ai')
+SKIP_EXISTING = os.getenv('SKIP_EXISTING', 'false').lower() == 'true'
 
 # Knowledge Base Creation Settings
 DIFY_KNOWLEDGE_NAME = os.getenv('DIFY_KNOWLEDGE_NAME', 'Jina Reader Crawl Results')
@@ -51,6 +52,7 @@ class DifyMetadataImporter:
         self.dataset_id = dataset_id
         self.base_url = base_url.rstrip('/')
         self.metadata_fields = {}
+        self.existing_documents_cache = None  # Cache for existing documents
 
         # Using direct API calls with requests
 
@@ -320,11 +322,15 @@ class DifyMetadataImporter:
         doc_name = metadata.get('title', Path(file_path).stem)
 
         try:
-            # Check if document already exists and delete it
+            # Check if document already exists
             existing_doc_id = self._find_existing_document(doc_name)
             if existing_doc_id:
-                print(f"🔄 Document '{doc_name}' already exists, replacing it...")
-                self._delete_document(existing_doc_id)
+                if SKIP_EXISTING:
+                    print(f"⏭️ Document '{doc_name}' already exists, skipping...")
+                    return existing_doc_id
+                else:
+                    print(f"🔄 Document '{doc_name}' already exists, replacing it...")
+                    self._delete_document(existing_doc_id)
 
             # Import document with parent-child mode and full document as parent
             # Direct API call with parent-child configuration
@@ -430,18 +436,25 @@ class DifyMetadataImporter:
         except Exception as e:
             print(f"❌ Error updating metadata: {e}")
 
-    def _find_existing_document(self, doc_name):
-        """Find existing document by name"""
+    def _load_existing_documents_cache(self):
+        """Load all existing documents into cache for faster lookups"""
+        if self.existing_documents_cache is not None:
+            return  # Already loaded
+
+        print("📋 Loading existing documents cache...")
+        self.existing_documents_cache = {}
+
         try:
             url = f"{self.base_url}/v1/datasets/{self.dataset_id}/documents"
             headers = {
                 'Authorization': f'Bearer {self.api_key}'
             }
 
-            # Search through pages to find the document
+            # Load all pages
             page = 1
+            total_docs = 0
             while True:
-                params = {'page': page, 'limit': 20}
+                params = {'page': page, 'limit': 100}  # Larger page size for efficiency
                 response = requests.get(url, headers=headers, params=params)
 
                 if response.status_code != 200:
@@ -450,21 +463,32 @@ class DifyMetadataImporter:
                 data = response.json()
                 documents = data.get('data', [])
 
-                # Look for document with matching name
+                # Add documents to cache
                 for doc in documents:
-                    if doc.get('name') == doc_name:
-                        return doc.get('id')
+                    doc_name = doc.get('name')
+                    doc_id = doc.get('id')
+                    if doc_name and doc_id:
+                        self.existing_documents_cache[doc_name] = doc_id
+                        total_docs += 1
 
                 # Check if there are more pages
                 if not data.get('has_more', False):
                     break
                 page += 1
 
-            return None
+            print(f"✅ Loaded {total_docs} existing documents into cache")
 
         except Exception as e:
-            print(f"⚠️ Error finding existing document: {e}")
-            return None
+            print(f"⚠️ Error loading documents cache: {e}")
+            self.existing_documents_cache = {}
+
+    def _find_existing_document(self, doc_name):
+        """Find existing document by name using cache"""
+        # Load cache if not already loaded
+        if self.existing_documents_cache is None:
+            self._load_existing_documents_cache()
+
+        return self.existing_documents_cache.get(doc_name)
 
     def _delete_document(self, document_id):
         """Delete an existing document"""
@@ -506,6 +530,10 @@ class DifyMetadataImporter:
         successful_imports = []
         failed_imports = []
 
+        # Pre-load existing documents cache for faster lookups
+        if SKIP_EXISTING:
+            self._load_existing_documents_cache()
+
         for md_file in md_files:
             # Skip report files
             if md_file.name in ['failed_urls.txt', 'crawl_summary.txt']:
@@ -515,11 +543,12 @@ class DifyMetadataImporter:
 
             if document_id:
                 successful_imports.append(str(md_file))
+                # Small delay only for actual imports
+                time.sleep(0.5)
             else:
                 failed_imports.append(str(md_file))
-
-            # Small delay between imports
-            time.sleep(1)
+                # Very short delay for failed/skipped documents
+                time.sleep(0.1)
 
         # Summary
         print(f"\n📊 Import Summary:")
