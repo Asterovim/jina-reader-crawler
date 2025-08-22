@@ -319,7 +319,15 @@ class DifyMetadataImporter:
             return None
 
         # Get document name from metadata or filename
-        doc_name = metadata.get('title', Path(file_path).stem)
+        title = metadata.get('title', Path(file_path).stem)
+        crawl_date = metadata.get('crawl_date', '')
+
+        # Trim title if too long (reserve space for crawl_date suffix)
+        if len(title) > 150:
+            title = title[:147] + "..."
+
+        # Create unique document name with title + crawl_date
+        doc_name = f"{title} ({crawl_date})"
 
         try:
             # Check if document already exists
@@ -518,12 +526,23 @@ class DifyMetadataImporter:
             print(f"❌ Crawl directory not found: {crawl_dir}")
             return
 
-        # Find all markdown files
-        md_files = list(crawl_path.glob("*.md"))
+        # Find all markdown files (excluding duplicates folder)
+        md_files = []
+        for md_file in crawl_path.glob("*.md"):
+            # Skip files that are in the duplicates folder or its subfolders
+            if "duplicates" not in md_file.parts:
+                md_files.append(md_file)
 
         if not md_files:
             print(f"❌ No markdown files found in {crawl_dir}")
             return
+
+        # Check if duplicates folder exists and report
+        duplicates_dir = crawl_path / "duplicates"
+        if duplicates_dir.exists():
+            duplicate_files = list(duplicates_dir.rglob("*.md"))
+            print(f"📁 Found {len(duplicate_files)} duplicate files in duplicates/ folder (will be ignored)")
+            print(f"📄 Processing {len(md_files)} unique content files")
 
         print(f"🚀 Found {len(md_files)} markdown files to import")
 

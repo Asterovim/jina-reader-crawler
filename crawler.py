@@ -12,6 +12,11 @@ import requests
 import xml.etree.ElementTree as ET
 from urllib.parse import urljoin, urlparse
 from pathlib import Path
+import re
+import shutil
+import yaml
+import argparse
+from collections import defaultdict, Counter
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -196,6 +201,100 @@ def fetch_with_jina(url):
     return None
 
 
+def extract_frontmatter(file_path):
+    """Extract frontmatter and content from markdown file"""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Match YAML frontmatter
+        frontmatter_match = re.match(r'^---\n(.*?)\n---\n(.*)', content, re.DOTALL)
+        if frontmatter_match:
+            frontmatter_yaml = frontmatter_match.group(1)
+            markdown_content = frontmatter_match.group(2)
+
+            metadata = yaml.safe_load(frontmatter_yaml)
+            return metadata, markdown_content
+        else:
+            # No frontmatter, return empty metadata and full content
+            return {}, content
+    except Exception as e:
+        print(f"⚠️ Error reading {file_path}: {e}")
+        return None, None
+
+
+def analyze_duplicates(output_dir):
+    """Analyze crawled files for duplicate titles and move them to separate folders"""
+    output_path = Path(f"crawl-result/{output_dir}")
+    md_files = list(output_path.glob("*.md"))
+
+    if not md_files:
+        return {}
+
+    print(f"\n📊 Analyzing {len(md_files)} files for duplicates...")
+
+    # Count title occurrences
+    title_to_files = defaultdict(list)
+
+    for md_file in md_files:
+        if md_file.name in ['failed_urls.txt', 'crawl_summary.txt']:
+            continue
+
+        metadata, content = extract_frontmatter(md_file)
+        if metadata is None:
+            continue
+
+        title = metadata.get('title', md_file.stem)
+        title_to_files[title].append(md_file)
+
+    # Find duplicates
+    duplicates = {title: files for title, files in title_to_files.items() if len(files) > 1}
+
+    if not duplicates:
+        print("✅ No duplicates found!")
+        return {}
+
+    print(f"⚠️ Found {len(duplicates)} titles with duplicates:")
+
+    # Create duplicates directory structure
+    duplicates_dir = output_path / "duplicates"
+    duplicates_dir.mkdir(exist_ok=True)
+
+    duplicate_stats = {}
+
+    for title, files in duplicates.items():
+        print(f"  - '{title}': {len(files)} files")
+
+        # Create safe folder name from title
+        safe_title = re.sub(r'[^\w\s-]', '', title).strip()
+        safe_title = re.sub(r'[-\s]+', '-', safe_title).lower()
+        if len(safe_title) > 50:
+            safe_title = safe_title[:50]
+        if not safe_title:
+            safe_title = "untitled"
+
+        title_dir = duplicates_dir / safe_title
+        title_dir.mkdir(exist_ok=True)
+
+        # Move ALL duplicate files to duplicates folder (including the first one)
+        files_to_move = files  # Move all files with duplicate titles
+
+        for file_to_move in files_to_move:
+            dest_path = title_dir / file_to_move.name
+            try:
+                shutil.move(str(file_to_move), str(dest_path))
+                print(f"    📁 Moved: {file_to_move.name} → duplicates/{safe_title}/")
+            except Exception as e:
+                print(f"    ❌ Error moving {file_to_move.name}: {e}")
+
+        duplicate_stats[title] = {
+            'total_files': len(files),
+            'moved_files': len(files_to_move),  # Now equals total_files since we move all
+            'folder': safe_title
+        }
+
+    return duplicate_stats
+
 
 def save_markdown(url, content, output_dir):
     """Save content as markdown file with metadata frontmatter"""
@@ -283,7 +382,7 @@ description: "{escape_yaml_value(description)}"
 
     print(f"Saved: {filepath}")
 
-def generate_report(successful_urls, failed_urls, output_dir):
+def generate_report(successful_urls, failed_urls, output_dir, duplicate_stats=None):
     """Generate crawling report"""
     crawl_result_dir = Path("crawl-result") / output_dir
     crawl_result_dir.mkdir(parents=True, exist_ok=True)
@@ -307,14 +406,82 @@ def generate_report(successful_urls, failed_urls, output_dir):
     with open(summary_path, 'w', encoding='utf-8') as f:
         f.write(f"# Crawl Summary Report\n")
         f.write(f"Generated: {timestamp}\n")
-        f.write(f"Total URLs processed: {len(successful_urls) + len(failed_urls)}\n")
+        total_urls = len(successful_urls) + len(failed_urls)
+        f.write(f"Total URLs processed: {total_urls}\n")
         f.write(f"Successful: {len(successful_urls)}\n")
         f.write(f"Failed: {len(failed_urls)}\n")
-        f.write(f"Success rate: {len(successful_urls)/(len(successful_urls) + len(failed_urls))*100:.1f}%\n")
+
+        # Calculate success rate only if there are URLs processed
+        if total_urls > 0:
+            success_rate = len(successful_urls) / total_urls * 100
+            f.write(f"Success rate: {success_rate:.1f}%\n")
+        else:
+            f.write(f"Success rate: N/A (duplicates-only mode)\n")
+
+        # Add duplicate analysis section
+        if duplicate_stats:
+            f.write(f"\n# Duplicate Analysis\n")
+            total_duplicates = sum(stats['moved_files'] for stats in duplicate_stats.values())
+            unique_files = len(successful_urls) - total_duplicates
+            f.write(f"Unique content files: {unique_files}\n")
+            f.write(f"Duplicate files found: {total_duplicates}\n")
+            f.write(f"Duplicate titles: {len(duplicate_stats)}\n")
+            f.write(f"\nDuplicate breakdown:\n")
+
+            for title, stats in sorted(duplicate_stats.items(), key=lambda x: x[1]['total_files'], reverse=True):
+                f.write(f"- '{title}': {stats['total_files']} files → moved all {stats['moved_files']} to duplicates/{stats['folder']}/\n")
+
+            f.write(f"\nDuplicate files moved to: crawl-result/{output_dir}/duplicates/\n")
+        else:
+            f.write(f"\n# Duplicate Analysis\n")
+            f.write(f"No duplicates found - all content is unique!\n")
+
     print(f"Summary report: {summary_path}")
 
 def main():
     """Main crawler function"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Jina Reader Sitemap Crawler')
+    parser.add_argument('--duplicates-only', action='store_true',
+                       help='Only analyze and move duplicate files (skip crawling)')
+    args = parser.parse_args()
+
+    # If duplicates-only mode, run analysis and exit
+    if args.duplicates_only:
+        print("🔍 Analyzing duplicates only (no crawling)")
+
+        # Check if crawl directory exists
+        crawl_dir = f"crawl-result/{OUTPUT_DIR}"
+        crawl_path = Path(crawl_dir)
+
+        if not crawl_path.exists():
+            print(f"❌ Crawl directory not found: {crawl_dir}")
+            print(f"   Run normal crawling first: python crawler.py")
+            return
+
+        # Check for markdown files
+        md_files = list(crawl_path.glob("*.md"))
+        if not md_files:
+            print(f"❌ No markdown files found in {crawl_dir}")
+            return
+
+        print(f"📁 Found {len(md_files)} files in {crawl_dir}")
+
+        # Analyze duplicates
+        duplicate_stats = analyze_duplicates(OUTPUT_DIR)
+
+        # Generate report with duplicates info only
+        generate_report([], [], OUTPUT_DIR, duplicate_stats)
+
+        if duplicate_stats:
+            total_duplicates = sum(stats['moved_files'] for stats in duplicate_stats.values())
+            print(f"\n✅ Analysis complete! {total_duplicates} duplicate files moved to {crawl_dir}/duplicates/")
+        else:
+            print(f"\n✅ Analysis complete! No duplicates found - all content is unique!")
+
+        return
+
+    # Normal crawling mode
     if not SITEMAP_URL:
         print("Error: SITEMAP_URL not set in .env file")
         return
@@ -435,12 +602,18 @@ def main():
             print(f"Waiting {delay:.1f}s...")
             time.sleep(delay)
 
+    # Analyze duplicates and move them to separate folders
+    duplicate_stats = analyze_duplicates(OUTPUT_DIR)
+
     # Generate report
-    generate_report(successful_urls, failed_urls, OUTPUT_DIR)
+    generate_report(successful_urls, failed_urls, OUTPUT_DIR, duplicate_stats)
 
     print(f"\n✅ Crawling complete! Check crawl-result/{OUTPUT_DIR}/ for markdown files")
     if failed_urls:
         print(f"⚠️ {len(failed_urls)} URLs failed. Check crawl-result/{OUTPUT_DIR}/failed_urls.txt for details")
+    if duplicate_stats:
+        total_duplicates = sum(stats['moved_files'] for stats in duplicate_stats.values())
+        print(f"📁 {total_duplicates} duplicate files moved to crawl-result/{OUTPUT_DIR}/duplicates/")
 
 if __name__ == "__main__":
     main()

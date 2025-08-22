@@ -13,6 +13,7 @@ Convert sitemaps to clean markdown using Jina Reader API, with optional Dify imp
 - **Anti-detection crawling** - Random delays between requests (10-20s default)
 - **Robust error handling** - Retry logic with timeout management
 - **Metadata preservation** - Title, URL, domain, crawl date in YAML frontmatter
+- **Duplicate detection** - Automatically identifies and isolates duplicate content
 - **Dify integration** - Direct import to Dify knowledge base with metadata
 - **Optional EU compliance** - Can use Jina's European servers
 
@@ -29,7 +30,14 @@ cp .env.example .env
 python crawler.py
 ```
 
-### 2. Import to Dify (optional)
+### 2. Analyze duplicates (optional)
+
+```bash
+# Analyze existing crawl for duplicates without re-crawling
+python crawler.py --duplicates-only
+```
+
+### 3. Import to Dify (optional)
 
 ```bash
 # Configure Dify settings in .env
@@ -60,6 +68,13 @@ CSS_SELECTOR=.ads,.sidebar,footer            # Remove unwanted elements
 START_FROM_INDEX=1                           # Resume from specific URL
 MIN_DELAY=10                                 # Min delay between requests (seconds)
 MAX_DELAY=20                                 # Max delay between requests (seconds)
+SKIP_EXISTING=false                          # Skip existing documents in Dify (true/false)
+```
+
+### Command Line Options
+```bash
+python crawler.py                           # Normal crawling with duplicate detection
+python crawler.py --duplicates-only         # Analyze duplicates without crawling
 ```
 
 ## Project Structure
@@ -83,8 +98,23 @@ jina-reader-crawler/
 
 Files saved to `crawl-result/{OUTPUT_DIR}/`:
 - `domain_page.md` - Clean markdown with YAML frontmatter metadata
-- `crawl_summary.txt` - Success/failure stats
+- `crawl_summary.txt` - Success/failure stats with duplicate analysis
 - `failed_urls.txt` - Failed URLs (if any)
+- `duplicates/` - Folder containing duplicate content organized by title
+
+### File Structure
+```
+crawl-result/output/
+├── unique_content_files.md
+├── crawl_summary.txt
+├── failed_urls.txt
+└── duplicates/
+    ├── page-non-trouvee/
+    │   ├── domain_error1.md
+    │   └── domain_error2.md
+    └── acces-refuse/
+        └── domain_forbidden.md
+```
 
 Each markdown file includes YAML frontmatter:
 ```markdown
@@ -99,6 +129,14 @@ language: "en"
 
 # Clean content without ads/navigation
 ```
+
+### Duplicate Detection
+
+The crawler automatically detects duplicate content based on page titles:
+- **Unique content**: Kept in main directory for Dify import
+- **Duplicates**: Moved to `duplicates/` folder organized by title
+- **Common duplicates**: Error pages (404, 403), generic templates
+- **Safety**: First occurrence kept, subsequent duplicates archived
 
 ## Rate Limits
 
