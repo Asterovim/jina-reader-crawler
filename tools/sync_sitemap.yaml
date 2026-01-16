@@ -1,0 +1,398 @@
+description:
+  human:
+    en_US: "Crawl all URLs from a sitemap.xml using Jina Reader API and sync content to a Dify Knowledge Base."
+    zh_Hans: "使用Jina Reader API从sitemap.xml爬取所有URL并同步到Dify知识库。"
+  llm: "Crawl sitemap URLs via Jina Reader API and sync to Dify Knowledge Base."
+extra:
+  python:
+    source: tools/sync_sitemap/tool.py
+identity:
+  author: asterovim
+  icon: icon.svg
+  label:
+    en_US: Sync Sitemap to Knowledge Base
+    zh_Hans: 同步站点地图到知识库
+  name: sync_sitemap
+parameters:
+  - form: form
+    human_description:
+      en_US: "URL of the sitemap.xml file to crawl (e.g., https://example.com/sitemap.xml)"
+      zh_Hans: "要爬取的sitemap.xml文件URL (例如 https://example.com/sitemap.xml)"
+    label:
+      en_US: Sitemap URL
+      zh_Hans: 站点地图URL
+    llm_description: "The URL of the sitemap.xml file containing URLs to crawl"
+    name: sitemap_url
+    required: true
+    type: string
+  - form: form
+    human_description:
+      en_US: "The ID of the Dify Knowledge Base (e.g., a31a1a14-e3ad-42cb-80d0-3ef537b2cb50)"
+      zh_Hans: "Dify知识库ID (例如 a31a1a14-e3ad-42cb-80d0-3ef537b2cb50)"
+    label:
+      en_US: Knowledge Base ID
+      zh_Hans: 知识库ID
+    llm_description: "Target Dify Knowledge Base (dataset) ID"
+    name: dataset_id
+    required: true
+    type: string
+  - form: form
+    human_description:
+      en_US: "Leave empty to process ALL URLs. Set a number to limit processing."
+      zh_Hans: "留空则处理所有URL。设置数字来限制处理数量。"
+    label:
+      en_US: Maximum URLs (optional)
+      zh_Hans: 最大URL数量(可选)
+    llm_description: "Optional limit on URLs to process. Omit to process all URLs from sitemap without any limit."
+    name: max_urls
+    required: false
+    type: number
+  - default: 1
+    form: form
+    human_description:
+      en_US: "Start processing from this URL index (1-based). Use to resume interrupted crawls."
+      zh_Hans: "从此URL索引开始处理(从1开始)。用于恢复中断的爬取。"
+    label:
+      en_US: Start From Index
+      zh_Hans: 从索引开始
+    llm_description: "1-based index to start processing from"
+    name: start_from_index
+    required: false
+    type: number
+  - form: form
+    human_description:
+      en_US: "Regex pattern to filter URLs (include only matching URLs)"
+      zh_Hans: "用于过滤URL的正则表达式(只包含匹配的URL)"
+    label:
+      en_US: URL Filter Pattern
+      zh_Hans: URL过滤模式
+    llm_description: "Regex pattern to filter which URLs to crawl"
+    name: url_filter
+    required: false
+    type: string
+  - form: form
+    human_description:
+      en_US: "Patterns to exclude (one per line). URLs containing any pattern will be skipped. Example: /admin/, ?page=, .pdf"
+      zh_Hans: "要排除的模式(每行一个)。包含任意模式的URL将被跳过。例如: /admin/, ?page=, .pdf"
+    label:
+      en_US: Exclude Patterns
+      zh_Hans: 排除模式
+    llm_description: "Newline-separated patterns. URLs containing any pattern (case-insensitive) will be excluded."
+    name: exclude_patterns
+    required: false
+    type: string
+  - form: form
+    human_description:
+      en_US: "Specific URLs to exclude from crawling (one per line). These exact URLs will be skipped. Supports http/https and www/non-www variations."
+      zh_Hans: "要从爬取中排除的特定URL(每行一个)。这些精确的URL将被跳过。支持http/https和www/非www变体。"
+    label:
+      en_US: Exclude URLs
+      zh_Hans: 排除的URL
+    llm_description: "Newline-separated list of specific URLs to exclude from crawling. URLs are normalized before comparison."
+    name: exclude_urls
+    required: false
+    type: string
+  - default: false
+    form: form
+    human_description:
+      en_US: "If true, skip documents that already exist"
+      zh_Hans: "如果为true，跳过已存在的文档"
+    label:
+      en_US: Skip Existing Documents
+      zh_Hans: 跳过已存在文档
+    llm_description: "Skip existing documents instead of updating them"
+    name: skip_existing
+    required: false
+    type: boolean
+  - default: false
+    form: form
+    human_description:
+      en_US: "⚡ Performance: Skip URLs unchanged since last sync using sitemap lastmod timestamps. Requires sitemap to have accurate <lastmod> values. Falls back to content comparison if lastmod unavailable."
+      zh_Hans: "⚡ 性能优化：使用站点地图lastmod时间戳跳过自上次同步后未更改的URL。需要站点地图具有准确的<lastmod>值。如果lastmod不可用，则回退到内容比较。"
+    label:
+      en_US: Use Lastmod Optimization (⚡ Faster)
+      zh_Hans: 使用Lastmod优化 (⚡ 更快)
+    llm_description: "Enable timestamp-based change detection to skip unchanged URLs. Saves ~6.5 seconds per unchanged URL by eliminating Jina fetch and hash comparison. Requires sitemap lastmod timestamps."
+    name: use_lastmod_optimization
+    required: false
+    type: boolean
+  - default: false
+    form: form
+    human_description:
+      en_US: "⚡⚡ RECOMMENDED: Automatically tracks sync state between runs. Only new or modified URLs are processed, reducing sync time by 90-95% for repeat syncs. No configuration needed - the system manages everything automatically."
+      zh_Hans: "⚡⚡ 推荐：自动跟踪运行之间的同步状态。只处理新增或修改的URL，重复同步时间减少90-95%。无需配置 - 系统自动管理一切。"
+    label:
+      en_US: Enable Incremental Sync (⚡⚡ 90% Faster)
+      zh_Hans: 启用增量同步 (⚡⚡ 快90%)
+    llm_description: "Enable automatic incremental sync. Stores sync state to skip unchanged URLs entirely (no API calls). Reduces sync time by 90-95% for repeat syncs."
+    name: enable_incremental_sync
+    required: false
+    type: boolean
+  - default: false
+    form: form
+    human_description:
+      en_US: "Force full sync, ignoring manifest. Useful when you suspect manifest is out of sync or want to verify all content."
+      zh_Hans: "强制完整同步，忽略清单。当怀疑清单不同步或想验证所有内容时使用。"
+    label:
+      en_US: Force Full Sync
+      zh_Hans: 强制完整同步
+    llm_description: "When enabled, performs full sync even if valid manifest exists. Manifest is updated at end."
+    name: force_full_sync
+    required: false
+    type: boolean
+  - default: false
+    form: form
+    human_description:
+      en_US: "⚠️ CAUTION: Delete KB documents whose URLs no longer exist in sitemap. Disabled by default for safety. Only enable if you understand the risks."
+      zh_Hans: "⚠️ 注意：删除URL不再存在于站点地图中的知识库文档。为安全起见默认禁用。仅在了解风险后启用。"
+    label:
+      en_US: Cleanup Removed URLs (⚠️ Use with caution)
+      zh_Hans: 清理已删除的URL (⚠️ 谨慎使用)
+    llm_description: "When enabled, removes documents from KB if their source URL is no longer in the sitemap. DISABLED BY DEFAULT for safety - can cause data loss if sitemap is incorrect."
+    name: cleanup_removed
+    required: false
+    type: boolean
+  - default: 20
+    form: form
+    human_description:
+      en_US: "Maximum number of documents to delete during cleanup. Safety limit to prevent accidental mass deletion. Increase if you expect large-scale content removals."
+      zh_Hans: "清理时删除文档的最大数量。防止意外大量删除的安全限制。如果预期大规模内容移除，请增加此值。"
+    label:
+      en_US: Max Cleanup Count
+      zh_Hans: 最大清理数量
+    llm_description: "Maximum documents to delete in cleanup. Default 20 balances safety with practical use. The 10% limit still applies."
+    name: max_cleanup_count
+    required: false
+    type: number
+  - default: false
+    form: form
+    human_description:
+      en_US: "Preview mode: Show what would be created, updated, or deleted without making actual changes."
+      zh_Hans: "预览模式：显示将要创建、更新或删除的内容，但不进行实际更改。"
+    label:
+      en_US: Dry Run (Preview Only)
+      zh_Hans: 试运行（仅预览）
+    llm_description: "When enabled, simulates the sync without making any changes. Useful for previewing cleanup actions."
+    name: dry_run
+    required: false
+    type: boolean
+  - default: true
+    form: form
+    human_description:
+      en_US: "If true, skip URLs with duplicate titles"
+      zh_Hans: "如果为true，跳过重复标题的URL"
+    label:
+      en_US: Skip Duplicate Titles
+      zh_Hans: 跳过重复标题
+    llm_description: "Skip URLs with duplicate titles"
+    name: skip_duplicates
+    required: false
+    type: boolean
+  - default: false
+    form: form
+    human_description:
+      en_US: "Use Jina EU servers for GDPR compliance"
+      zh_Hans: "使用Jina欧盟服务器以符合GDPR"
+    label:
+      en_US: EU Compliance Mode
+      zh_Hans: 欧盟合规模式
+    llm_description: "Use EU-based Jina servers"
+    name: eu_compliance
+    required: false
+    type: boolean
+  - form: form
+    human_description:
+      en_US: "CSS selector for elements to remove from content"
+      zh_Hans: "要从内容中移除的元素的CSS选择器"
+    label:
+      en_US: CSS Selector to Remove
+      zh_Hans: 要移除的CSS选择器
+    llm_description: "CSS selector for elements to remove"
+    name: css_selector
+    required: false
+    type: string
+  - default: 3
+    form: form
+    human_description:
+      en_US: "Minimum seconds to wait between requests (default 3)"
+      zh_Hans: "请求之间的最小等待秒数(默认3)"
+    label:
+      en_US: Minimum Delay (seconds)
+      zh_Hans: 最小延迟(秒)
+    llm_description: "Minimum delay between requests in seconds"
+    name: min_delay
+    required: false
+    type: number
+  - default: 6
+    form: form
+    human_description:
+      en_US: "Maximum seconds to wait between requests (default 6, set 0 for no delay)"
+      zh_Hans: "请求之间的最大等待秒数(默认6，设为0无延迟)"
+    label:
+      en_US: Maximum Delay (seconds)
+      zh_Hans: 最大延迟(秒)
+    llm_description: "Maximum delay between requests in seconds. Set to 0 to disable delays."
+    name: max_delay
+    required: false
+    type: number
+  - default: 3
+    form: form
+    human_description:
+      en_US: "Number of Dify updates per batch before cooldown pause (default 3). Prevents Dify worker queue overflow."
+      zh_Hans: "每批次的Dify更新数量(默认3)。防止Dify工作队列溢出。"
+    label:
+      en_US: Batch Size (Dify writes)
+      zh_Hans: 批量大小(Dify写入)
+    llm_description: "Number of Dify document updates per batch before cooldown. Lower values are safer for Dify server stability."
+    name: chunk_size
+    required: false
+    type: number
+  - default: 30
+    form: form
+    human_description:
+      en_US: "Seconds to wait between batches for Dify indexing (default 30). Allows Dify workers to complete before next batch."
+      zh_Hans: "批次间等待Dify索引的秒数(默认30)。允许Dify工作进程完成后再处理下一批。"
+    label:
+      en_US: Batch Cooldown (seconds)
+      zh_Hans: 批次冷却时间(秒)
+    llm_description: "Cooldown period between batches to let Dify complete indexing operations."
+    name: chunk_cooldown
+    required: false
+    type: number
+  - default: 2
+    form: form
+    human_description:
+      en_US: "Number of retry attempts for failed requests"
+      zh_Hans: "失败请求的重试次数"
+    label:
+      en_US: Retry Count
+      zh_Hans: 重试次数
+    llm_description: "Number of retries with exponential backoff"
+    name: retry_count
+    required: false
+    type: number
+  - default: 60
+    form: form
+    human_description:
+      en_US: "Request timeout in seconds (default 60)"
+      zh_Hans: "请求超时时间(秒)，默认60"
+    label:
+      en_US: Request Timeout (seconds)
+      zh_Hans: 请求超时(秒)
+    llm_description: "Timeout for each HTTP request in seconds"
+    name: request_timeout
+    required: false
+    type: number
+  - default: false
+    form: form
+    human_description:
+      en_US: "Bypass cache and fetch fresh content"
+      zh_Hans: "绕过缓存获取最新内容"
+    label:
+      en_US: No Cache Mode
+      zh_Hans: 无缓存模式
+    llm_description: "Force fresh content fetch, bypass Jina cache"
+    name: no_cache
+    required: false
+    type: boolean
+  - form: form
+    human_description:
+      en_US: "CSS selector to wait for before processing (for dynamic content)"
+      zh_Hans: "处理前等待的CSS选择器(用于动态内容)"
+    label:
+      en_US: Wait For Selector
+      zh_Hans: 等待选择器
+    llm_description: "CSS selector to wait for dynamic content to load"
+    name: wait_for_selector
+    required: false
+    type: string
+  - form: form
+    human_description:
+      en_US: "Output format for the content. Leave as 'Default' to let the Jina API decide (typically markdown). Options: markdown, html, text, screenshot, or pageshot"
+      zh_Hans: "内容的输出格式。保留为'默认'让Jina API决定（通常是markdown）。选项：markdown、html、text、screenshot 或 pageshot"
+    label:
+      en_US: Return Format
+      zh_Hans: 返回格式
+    llm_description: "Desired output format from Jina Reader. Leave empty to use Jina API's default behavior. Options: markdown, html, text, screenshot, or pageshot"
+    name: return_format
+    options:
+      - label:
+          en_US: Default (API decides)
+          zh_Hans: 默认（API决定）
+        value: ""
+      - label:
+          en_US: Markdown
+          zh_Hans: Markdown
+        value: markdown
+      - label:
+          en_US: HTML
+          zh_Hans: HTML
+        value: html
+      - label:
+          en_US: Plain Text
+          zh_Hans: 纯文本
+        value: text
+      - label:
+          en_US: Screenshot
+          zh_Hans: 截图
+        value: screenshot
+      - label:
+          en_US: Pageshot (Full Page)
+          zh_Hans: 全页截图
+        value: pageshot
+    required: false
+    type: select
+  - default: "disabled"
+    form: form
+    human_description:
+      en_US: "Enable streaming mode for more complete content extraction. Useful for pages with dynamic JavaScript content that loads after initial page render. When enabled, the API waits longer until the page is stably rendered."
+      zh_Hans: "启用流式模式以获取更完整的内容提取。适用于在初始页面渲染后通过JavaScript动态加载内容的页面。启用后，API会等待更长时间直到页面稳定渲染完成。"
+    label:
+      en_US: Streaming Mode
+      zh_Hans: 流式模式
+    llm_description: "Enable streaming mode for more complete content extraction on dynamic pages"
+    name: streaming_mode
+    options:
+      - label:
+          en_US: Disabled (Standard Mode)
+          zh_Hans: 禁用（标准模式）
+        value: disabled
+      - label:
+          en_US: Enabled (Wait for Stable Render)
+          zh_Hans: 启用（等待稳定渲染）
+        value: enabled
+    required: false
+    type: select
+  - default: "en"
+    form: form
+    human_description:
+      en_US: "Language for status messages and progress indicators"
+      zh_Hans: "状态消息和进度指示器的语言"
+    label:
+      en_US: Display Language
+      zh_Hans: 显示语言
+    llm_description: "Language for displaying status messages during synchronization"
+    name: display_language
+    options:
+      - label:
+          en_US: English
+          zh_Hans: 英语
+        value: en
+      - label:
+          en_US: French (Français)
+          zh_Hans: 法语
+        value: fr
+    required: false
+    type: select
+  - name: jina_api_key
+    type: secret-input
+    required: false
+    label:
+      en_US: Jina API Key (optional override)
+      zh_Hans: Jina API 密钥（可选覆盖）
+    human_description:
+      en_US: Optional Jina API key to override provider credential. Get your key at jina.ai/reader
+      zh_Hans: 可选的 Jina API 密钥，用于覆盖提供商凭据。在 jina.ai/reader 获取密钥
+    llm_description: Optional Jina API key. If provided, overrides the provider-level credential.
+    form: form
+

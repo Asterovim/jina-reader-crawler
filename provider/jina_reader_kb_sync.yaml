@@ -1,0 +1,56 @@
+credentials_for_provider:
+  jina_api_key:
+    type: secret-input
+    required: false
+    label:
+      en_US: Jina API Key
+      zh_Hans: Jina API 密钥
+    placeholder:
+      en_US: "jina_xxxx (optional)"
+      zh_Hans: "jina_xxxx (可选)"
+    help:
+      en_US: "Get your API key at jina.ai/reader"
+      zh_Hans: "在 jina.ai/reader 获取API密钥"
+  dify_api_key:
+    type: secret-input
+    required: true
+    label:
+      en_US: Dify API Key
+      zh_Hans: Dify API 密钥
+    placeholder:
+      en_US: "dataset-xxxx"
+      zh_Hans: "dataset-xxxx"
+    help:
+      en_US: "Your Dify Dataset API key"
+      zh_Hans: "您的Dify数据集API密钥"
+  dify_base_url:
+    type: text-input
+    required: false
+    default: "https://api.dify.ai"
+    label:
+      en_US: Dify Base URL
+      zh_Hans: Dify 基础URL
+    placeholder:
+      en_US: "https://api.dify.ai"
+      zh_Hans: "https://api.dify.ai"
+    help:
+      en_US: "Base URL for Dify API"
+      zh_Hans: "Dify API基础URL"
+extra:
+  python:
+    source: provider/jina_reader_kb_sync.py
+identity:
+  author: asterovim
+  description:
+    en_US: Crawl websites via Jina Reader API and sync to Dify Knowledge Base
+    zh_Hans: 通过Jina Reader API爬取网站并同步到Dify知识库
+  icon: icon.svg
+  label:
+    en_US: Jina Reader KB Sync
+    zh_Hans: Jina Reader 知识库同步
+  name: jina_reader_kb_sync
+  tags:
+    - utilities
+tools:
+  - tools/sync_sitemap.yaml
+
