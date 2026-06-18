@@ -116,3 +116,40 @@ def get_url_path(url: str) -> str:
         path += f"?{parsed.query[:30]}"  # Include query params, truncated
     return path[:60] if len(path) > 60 else path
 
+
+def parse_manual_urls(text: str) -> list[str]:
+    """Parse a newline/comma-separated URL list from a textarea field.
+
+    Rules:
+    - Split on newlines and commas
+    - Strip whitespace per entry
+    - Drop empty lines and comments (lines starting with #)
+    - Keep only http:// or https:// URLs
+    - Dedupe while preserving first-seen order
+
+    Args:
+        text: Raw text from the `manual_urls` tool parameter.
+
+    Returns:
+        Ordered list of unique URLs.
+    """
+    if not text:
+        return []
+
+    candidates: list[str] = []
+    for line in text.replace(",", "\n").splitlines():
+        url = line.strip()
+        if not url or url.startswith("#"):
+            continue
+        if not (url.startswith("http://") or url.startswith("https://")):
+            continue
+        candidates.append(url)
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for url in candidates:
+        if url not in seen:
+            seen.add(url)
+            unique.append(url)
+    return unique
+

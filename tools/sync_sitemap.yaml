@@ -16,14 +16,25 @@ identity:
 parameters:
   - form: form
     human_description:
-      en_US: "URL of the sitemap.xml file to crawl (e.g., https://example.com/sitemap.xml)"
-      zh_Hans: "要爬取的sitemap.xml文件URL (例如 https://example.com/sitemap.xml)"
+      en_US: "URL of the sitemap.xml file to crawl (e.g., https://example.com/sitemap.xml). Optional if manual_urls is provided."
+      zh_Hans: "要爬取的sitemap.xml文件URL (例如 https://example.com/sitemap.xml)。如果提供了 manual_urls 则可选。"
     label:
       en_US: Sitemap URL
       zh_Hans: 站点地图URL
-    llm_description: "The URL of the sitemap.xml file containing URLs to crawl"
+    llm_description: "The URL of the sitemap.xml file containing URLs to crawl. Optional when manual_urls is provided."
     name: sitemap_url
-    required: true
+    required: false
+    type: string
+  - form: form
+    human_description:
+      en_US: "List of URLs to crawl (one per line, or comma-separated). Alternative to sitemap_url. Merged with sitemap_url if both are provided. Lines starting with # are ignored."
+      zh_Hans: "要爬取的URL列表（每行一个，或用逗号分隔）。sitemap_url 的替代方案。如果两者都提供则会合并。以 # 开头的行会被忽略。"
+    label:
+      en_US: Manual URLs (optional)
+      zh_Hans: 手动URL列表（可选）
+    llm_description: "Optional newline- or comma-separated list of URLs to crawl. Use as an alternative to sitemap_url, or combine both."
+    name: manual_urls
+    required: false
     type: string
   - form: form
     human_description:

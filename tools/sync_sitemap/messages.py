@@ -9,6 +9,8 @@ from typing import Any
 MESSAGES: dict[str, dict[str, str]] = {
     "en": {
         "starting_sync": "🚀 Starting sitemap sync from:\n{url}\n",
+        "starting_sync_manual": "🚀 Starting sync from manual URL list ({count} URLs)\n",
+        "starting_sync_both": "🚀 Starting sync from sitemap + manual URLs ({count} URLs total)\n",
         "dry_run_mode": "🔍 DRY RUN MODE: No changes will be made\n",
         "no_urls_found": "❌ No URLs found in sitemap\n",
         "found_urls": "📋 Found {count} URLs in sitemap\n",
@@ -51,7 +53,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "summary_would_create": "✅ Would create: {count}\n",
         "summary_would_update": "🔄 Would update: {count}\n",
         "summary_would_clean": "🗑️ Would clean: {count}\n",
-        "error_required_fields": "Error: sitemap_url and dataset_id are required",
+        "error_required_fields": "Error: dataset_id is required and at least one of sitemap_url or manual_urls must be provided",
         "failed_urls_header": "\n❌ Failed URLs:\n",
         "manual_review_header": "\n⚠️ Documents needing manual review ({count}):\n",
         "lastmod_enabled": "⚡ Lastmod optimization enabled (faster sync for unchanged content)\n",
@@ -75,6 +77,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     },
     "fr": {
         "starting_sync": "🚀 Démarrage de la synchronisation depuis :\n{url}\n",
+        "starting_sync_manual": "🚀 Démarrage de la synchronisation depuis la liste manuelle ({count} URLs)\n",
+        "starting_sync_both": "🚀 Démarrage de la synchronisation depuis sitemap + URLs manuelles ({count} URLs au total)\n",
         "dry_run_mode": "🔍 MODE SIMULATION : Aucune modification ne sera effectuée\n",
         "no_urls_found": "❌ Aucune URL trouvée dans le sitemap\n",
         "found_urls": "📋 {count} URLs trouvées dans le sitemap\n",
@@ -117,7 +121,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "summary_would_create": "✅ Créerait : {count}\n",
         "summary_would_update": "🔄 Mettrait à jour : {count}\n",
         "summary_would_clean": "🗑️ Nettoierait : {count}\n",
-        "error_required_fields": "Erreur : sitemap_url et dataset_id sont requis",
+        "error_required_fields": "Erreur : dataset_id est requis et au moins un des champs sitemap_url ou manual_urls doit être fourni",
         "failed_urls_header": "\n❌ URLs en échec :\n",
         "manual_review_header": "\n⚠️ Documents nécessitant une révision manuelle ({count}) :\n",
         "lastmod_enabled": "⚡ Optimisation lastmod activée (sync plus rapide pour le contenu inchangé)\n",

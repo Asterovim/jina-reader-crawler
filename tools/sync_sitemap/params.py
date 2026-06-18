@@ -26,8 +26,11 @@ def extract_parameters(tool_parameters: dict[str, Any], runtime: Any) -> dict[st
     manifest_path = get_manifest_path(dataset_id) if enable_incremental and dataset_id else ""
 
     return {
+        # Sources (at least one required)
+        "sitemap_url": tool_parameters.get("sitemap_url", "") or "",
+        "manual_urls": tool_parameters.get("manual_urls", "") or "",
+
         # Required
-        "sitemap_url": tool_parameters.get("sitemap_url", ""),
         "dataset_id": dataset_id,
 
         # Pagination
@@ -148,5 +151,7 @@ def validate_required_params(params: dict[str, Any]) -> bool:
     Returns:
         True if valid, False otherwise
     """
-    return bool(params.get("sitemap_url") and params.get("dataset_id"))
+    if not params.get("dataset_id"):
+        return False
+    return bool(params.get("sitemap_url") or params.get("manual_urls"))
 

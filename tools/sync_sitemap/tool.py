@@ -42,7 +42,7 @@ from .reporting import (
 )
 from .sitemap_parser import get_urls_from_sitemap
 from .sync_processor import SyncStats, UrlProcessor
-from .url_processing import generate_url_hash, normalize_url
+from .url_processing import generate_url_hash, normalize_url, parse_manual_urls
 
 
 class SyncSitemapTool(Tool):
@@ -59,7 +59,27 @@ class SyncSitemapTool(Tool):
             yield self.create_text_message(get_message(params["lang"], "error_required_fields"))
             return
 
-        yield self.create_text_message(get_message(params["lang"], "starting_sync", url=params["sitemap_url"]))
+        # Build the URL list (sitemap + manual), then announce
+        url_lastmod_map, urls = self._get_sitemap_urls(params)
+        if not urls:
+            yield self.create_text_message(get_message(params["lang"], "no_urls_found"))
+            return
+
+        has_sitemap = bool(params.get("sitemap_url"))
+        has_manual = bool(params.get("manual_urls"))
+        if has_sitemap and has_manual:
+            yield self.create_text_message(get_message(
+                params["lang"], "starting_sync_both", count=len(urls)
+            ))
+        elif has_sitemap:
+            yield self.create_text_message(get_message(
+                params["lang"], "starting_sync", url=params["sitemap_url"]
+            ))
+        else:
+            yield self.create_text_message(get_message(
+                params["lang"], "starting_sync_manual", count=len(urls)
+            ))
+
         if params["dry_run"]:
             yield self.create_text_message(get_message(params["lang"], "dry_run_mode"))
         if params["use_lastmod_optimization"]:
@@ -69,12 +89,7 @@ class SyncSitemapTool(Tool):
         jina_client = JinaClient(build_jina_config(params))
         dify_client = DifyClient(build_dify_config(params))
 
-        # Get URLs from sitemap
-        url_lastmod_map, urls = self._get_sitemap_urls(params)
-        if not urls:
-            yield self.create_text_message(get_message(params["lang"], "no_urls_found"))
-            return
-
+        # URLs already collected above; only need the count for the message
         total_in_sitemap = len(urls)
         yield self.create_text_message(get_message(params["lang"], "found_urls", count=total_in_sitemap))
 
@@ -144,18 +159,37 @@ class SyncSitemapTool(Tool):
         ))
 
     def _get_sitemap_urls(self, params: dict[str, Any]) -> tuple[dict[str, str | None], list[str]]:
-        """Get URLs from sitemap, with lastmod data if optimization enabled."""
-        url_lastmod_map: dict[str, str | None] = {}
+        """Get URLs from sitemap, manual_urls, or both, with lastmod data if optimization enabled.
 
-        if params["use_lastmod_optimization"]:
-            url_data = get_urls_from_sitemap(params["sitemap_url"], return_lastmod=True)
-            if isinstance(url_data, dict):
-                url_lastmod_map = url_data
-                urls = list(url_data.keys())
+        Merges sources and deduplicates by raw URL. When both sources are used and
+        a URL appears in both, the sitemap version wins and keeps its lastmod.
+        Manual URLs always have lastmod=None.
+        """
+        sitemap_url: str = params.get("sitemap_url", "")
+        manual_text: str = params.get("manual_urls", "")
+        url_lastmod_map: dict[str, str | None] = {}
+        urls: list[str] = []
+
+        # Sitemap source (skip fetch if no URL provided)
+        if sitemap_url:
+            if params["use_lastmod_optimization"]:
+                url_data = get_urls_from_sitemap(sitemap_url, return_lastmod=True)
+                if isinstance(url_data, dict):
+                    url_lastmod_map.update(url_data)
+                    urls.extend(url_data.keys())
+                else:
+                    urls.extend(url_data)
             else:
-                urls = url_data
-        else:
-            urls = get_urls_from_sitemap(params["sitemap_url"])
+                urls.extend(get_urls_from_sitemap(sitemap_url))
+
+        # Manual source
+        manual_urls = parse_manual_urls(manual_text)
+        for url in manual_urls:
+            if url in url_lastmod_map:
+                continue  # sitemap version already tracked
+            if url in urls:
+                continue  # dedupe with already-collected sitemap URL
+            urls.append(url)
 
         return url_lastmod_map, urls
 
@@ -176,24 +210,31 @@ class SyncSitemapTool(Tool):
 
         if params["force_full_sync"]:
             yield self.create_text_message(get_message(lang, "force_full_sync"))
-            manifest = create_manifest(params["sitemap_url"], params["dataset_id"], {
-                "url_filter": params["url_filter"],
-                "exclude_patterns": params["exclude_patterns"],
-                "exclude_urls": params["exclude_urls"],
-            })
+            manifest = create_manifest(
+                params["sitemap_url"], params["dataset_id"], {
+                    "url_filter": params["url_filter"],
+                    "exclude_patterns": params["exclude_patterns"],
+                    "exclude_urls": params["exclude_urls"],
+                },
+                manual_urls=params["manual_urls"],
+            )
         else:
             manifest = load_manifest(params["manifest_path"])
 
             if manifest is None:
                 yield self.create_text_message(get_message(lang, "manifest_not_found"))
-                manifest = create_manifest(params["sitemap_url"], params["dataset_id"], {
-                    "url_filter": params["url_filter"],
-                    "exclude_patterns": params["exclude_patterns"],
-                    "exclude_urls": params["exclude_urls"],
-                })
+                manifest = create_manifest(
+                    params["sitemap_url"], params["dataset_id"], {
+                        "url_filter": params["url_filter"],
+                        "exclude_patterns": params["exclude_patterns"],
+                        "exclude_urls": params["exclude_urls"],
+                    },
+                    manual_urls=params["manual_urls"],
+                )
             else:
                 current_params = {
                     "sitemap_url": params["sitemap_url"],
+                    "manual_urls": params["manual_urls"],
                     "dataset_id": params["dataset_id"],
                     "url_filter": params["url_filter"],
                     "exclude_patterns": params["exclude_patterns"],
@@ -202,11 +243,14 @@ class SyncSitemapTool(Tool):
 
                 if not validate_manifest_params(manifest, current_params):
                     yield self.create_text_message(get_message(lang, "manifest_filter_changed"))
-                    manifest = create_manifest(params["sitemap_url"], params["dataset_id"], {
-                        "url_filter": params["url_filter"],
-                        "exclude_patterns": params["exclude_patterns"],
-                        "exclude_urls": params["exclude_urls"],
-                    })
+                    manifest = create_manifest(
+                        params["sitemap_url"], params["dataset_id"], {
+                            "url_filter": params["url_filter"],
+                            "exclude_patterns": params["exclude_patterns"],
+                            "exclude_urls": params["exclude_urls"],
+                        },
+                        manual_urls=params["manual_urls"],
+                    )
                 else:
                     incremental_mode = True
                     last_sync = manifest.get("last_sync_completed", "unknown")
@@ -217,7 +261,7 @@ class SyncSitemapTool(Tool):
                     if url_lastmod_map:
                         for url in urls:
                             current_sitemap_data[url] = url_lastmod_map.get(url)
-                    else:
+                    elif params["sitemap_url"]:
                         sitemap_with_lastmod = get_urls_from_sitemap(params["sitemap_url"], return_lastmod=True)
                         if isinstance(sitemap_with_lastmod, dict):
                             for url in urls:
@@ -225,6 +269,10 @@ class SyncSitemapTool(Tool):
                         else:
                             for url in urls:
                                 current_sitemap_data[url] = None
+                    else:
+                        # Manual-only mode: no lastmod available
+                        for url in urls:
+                            current_sitemap_data[url] = None
 
                     incremental_diff = compute_incremental_diff(manifest, current_sitemap_data)
                     unchanged_urls_set = incremental_diff["unchanged_urls"]

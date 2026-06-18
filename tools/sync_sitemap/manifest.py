@@ -78,6 +78,8 @@ def validate_manifest_params(manifest: dict, current_params: dict) -> bool:
 
     if manifest.get("sitemap_url") != current_params.get("sitemap_url"):
         return False
+    if manifest.get("manual_urls", "") != current_params.get("manual_urls", ""):
+        return False
     if manifest.get("dataset_id") != current_params.get("dataset_id"):
         return False
 
@@ -132,11 +134,15 @@ def save_manifest_atomic(manifest: dict, path: str) -> tuple[bool, str]:
                 pass
 
 
-def create_manifest(sitemap_url: str, dataset_id: str, filter_params: dict) -> dict:
+def create_manifest(
+    sitemap_url: str, dataset_id: str, filter_params: dict,
+    manual_urls: str = ""
+) -> dict:
     """Create a new empty manifest structure."""
     return {
         "version": "1.0",
         "sitemap_url": sitemap_url,
+        "manual_urls": manual_urls,
         "dataset_id": dataset_id,
         "last_sync_completed": None,
         "sync_status": "in_progress",

@@ -95,7 +95,8 @@ Crawl all URLs from a sitemap and sync to your Knowledge Base. Supports resume f
 **Parameters:**
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `sitemap_url` | Yes | - | URL of sitemap.xml or single page URL |
+| `sitemap_url` | No | - | URL of sitemap.xml or single page URL. Required if `manual_urls` is not provided. |
+| `manual_urls` | No | - | Newline- or comma-separated list of URLs to crawl. Alternative or complement to `sitemap_url` (merged & deduped). Lines starting with `#` are ignored. Non-http(s) URLs are dropped. |
 | `dataset_id` | Yes | - | Knowledge Base ID |
 | `max_urls` | No | (all) | Max URLs to process (leave empty to process all) |
 | `start_from_index` | No | 1 | 1-based index to start from (for resuming interrupted crawls) |
