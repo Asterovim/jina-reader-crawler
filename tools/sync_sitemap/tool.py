@@ -42,7 +42,12 @@ from .reporting import (
 )
 from .sitemap_parser import get_urls_from_sitemap
 from .sync_processor import SyncStats, UrlProcessor
-from .url_processing import generate_url_hash, normalize_url, parse_manual_urls
+from .url_processing import (
+    generate_url_hash,
+    normalize_url,
+    parse_manual_urls,
+    probe_head_lastmod,
+)
 
 
 class SyncSitemapTool(Tool):
@@ -60,7 +65,7 @@ class SyncSitemapTool(Tool):
             return
 
         # Build the URL list (sitemap + manual), then announce
-        url_lastmod_map, urls = self._get_sitemap_urls(params)
+        url_lastmod_map, url_etag_map, urls = self._get_sitemap_urls(params)
         if not urls:
             yield self.create_text_message(get_message(params["lang"], "no_urls_found"))
             return
@@ -78,6 +83,17 @@ class SyncSitemapTool(Tool):
         else:
             yield self.create_text_message(get_message(
                 params["lang"], "starting_sync_manual", count=len(urls)
+            ))
+
+        # Surface HEAD probe summary if any signals were collected for manual URLs
+        if has_manual and (url_lastmod_map or url_etag_map):
+            probed = sum(
+                1 for u in parse_manual_urls(params["manual_urls"])
+                if url_lastmod_map.get(u) or url_etag_map.get(u)
+            )
+            yield self.create_text_message(get_message(
+                params["lang"], "head_probe_summary",
+                probed=probed, total=len(urls)
             ))
 
         if params["dry_run"]:
@@ -103,7 +119,7 @@ class SyncSitemapTool(Tool):
 
         # Handle incremental sync
         incremental_mode, manifest, unchanged_urls_set = yield from self._handle_incremental_sync(
-            urls, url_lastmod_map, params
+            urls, url_lastmod_map, url_etag_map, params
         )
 
         # Load existing documents and build cache
@@ -128,7 +144,7 @@ class SyncSitemapTool(Tool):
 
         stats, failed_urls, failed_reasons = yield from self._process_urls(
             urls, processor, hash_to_doc, unchanged_urls_set, incremental_mode,
-            manifest, url_lastmod_map, params
+            manifest, url_lastmod_map, url_etag_map, params
         )
         stats["cleaned"] = cleanup_count
         stats["would_clean"] = would_clean_count if params["dry_run"] else 0
@@ -158,16 +174,27 @@ class SyncSitemapTool(Tool):
             incremental_mode, params
         ))
 
-    def _get_sitemap_urls(self, params: dict[str, Any]) -> tuple[dict[str, str | None], list[str]]:
-        """Get URLs from sitemap, manual_urls, or both, with lastmod data if optimization enabled.
+    def _get_sitemap_urls(
+        self, params: dict[str, Any]
+    ) -> tuple[dict[str, str | None], dict[str, str | None], list[str]]:
+        """Get URLs from sitemap, manual_urls, or both, with lastmod + etag data.
 
-        Merges sources and deduplicates by raw URL. When both sources are used and
-        a URL appears in both, the sitemap version wins and keeps its lastmod.
-        Manual URLs always have lastmod=None.
+        For sitemap URLs, lastmod comes from the sitemap XML (no etag).
+        For manual URLs, when `probe_head_for_manual_urls` is enabled (and the
+        URL was not already provided by the sitemap), a HEAD request is sent to
+        capture Last-Modified and ETag headers. Both feeds are merged and
+        deduplicated; sitemap URLs win on collision and keep their lastmod.
+
+        Returns:
+            (url_lastmod_map, url_etag_map, urls) where:
+            - url_lastmod_map: {url: iso_lastmod_or_None}
+            - url_etag_map: {url: etag_or_None} (only populated by HEAD probe)
+            - urls: ordered list of unique URLs
         """
         sitemap_url: str = params.get("sitemap_url", "")
         manual_text: str = params.get("manual_urls", "")
         url_lastmod_map: dict[str, str | None] = {}
+        url_etag_map: dict[str, str | None] = {}
         urls: list[str] = []
 
         # Sitemap source (skip fetch if no URL provided)
@@ -184,6 +211,9 @@ class SyncSitemapTool(Tool):
 
         # Manual source
         manual_urls = parse_manual_urls(manual_text)
+        timeout = int(params.get("request_timeout", 60))
+        probe_enabled = bool(params.get("probe_head_for_manual_urls", True))
+
         for url in manual_urls:
             if url in url_lastmod_map:
                 continue  # sitemap version already tracked
@@ -191,10 +221,18 @@ class SyncSitemapTool(Tool):
                 continue  # dedupe with already-collected sitemap URL
             urls.append(url)
 
-        return url_lastmod_map, urls
+            if probe_enabled:
+                probe = probe_head_lastmod(url, timeout=timeout)
+                if probe.get("lastmod"):
+                    url_lastmod_map[url] = probe["lastmod"]
+                if probe.get("etag"):
+                    url_etag_map[url] = probe["etag"]
+
+        return url_lastmod_map, url_etag_map, urls
 
     def _handle_incremental_sync(
-        self, urls: list[str], url_lastmod_map: dict[str, str | None], params: dict[str, Any]
+        self, urls: list[str], url_lastmod_map: dict[str, str | None],
+        url_etag_map: dict[str, str | None], params: dict[str, Any]
     ) -> Generator[ToolInvokeMessage, None, tuple[bool, dict | None, set[str]]]:
         """Handle incremental sync logic with manifest."""
         lang = params["lang"]
@@ -255,6 +293,34 @@ class SyncSitemapTool(Tool):
                     incremental_mode = True
                     last_sync = manifest.get("last_sync_completed", "unknown")
                     yield self.create_text_message(get_message(lang, "manifest_loaded", timestamp=last_sync))
+
+                    # Build per-URL payload {url: {lastmod, etag}} for the diff.
+                    # Sitemap URLs may have lastmod but no etag; manual URLs (when
+                    # probed) have both.
+                    current_sitemap_data: dict[str, dict[str, str | None]] = {}
+                    if url_lastmod_map or url_etag_map:
+                        for url in urls:
+                            current_sitemap_data[url] = {
+                                "lastmod": url_lastmod_map.get(url),
+                                "etag": url_etag_map.get(url),
+                            }
+                    elif params["sitemap_url"]:
+                        sitemap_with_lastmod = get_urls_from_sitemap(params["sitemap_url"], return_lastmod=True)
+                        if isinstance(sitemap_with_lastmod, dict):
+                            for url in urls:
+                                current_sitemap_data[url] = {"lastmod": sitemap_with_lastmod.get(url), "etag": None}
+                        else:
+                            for url in urls:
+                                current_sitemap_data[url] = {"lastmod": None, "etag": None}
+                    else:
+                        # Manual-only mode without probing: no signals
+                        for url in urls:
+                            current_sitemap_data[url] = {"lastmod": None, "etag": None}
+
+                    incremental_diff = compute_incremental_diff(manifest, current_sitemap_data)
+                    unchanged_urls_set = incremental_diff["unchanged_urls"]
+
+
 
                     # Build sitemap data for diff
                     current_sitemap_data: dict[str, str | None] = {}
@@ -322,7 +388,7 @@ class SyncSitemapTool(Tool):
     def _process_urls(
         self, urls: list[str], processor: UrlProcessor, hash_to_doc: dict,
         unchanged_urls_set: set[str], incremental_mode: bool, manifest: dict | None,
-        url_lastmod_map: dict, params: dict[str, Any]
+        url_lastmod_map: dict, url_etag_map: dict, params: dict[str, Any]
     ) -> Generator[ToolInvokeMessage, None, tuple[dict, list, dict]]:
         """Process all URLs using UrlProcessor and yield progress messages."""
         lang = params["lang"]
@@ -368,9 +434,10 @@ class SyncSitemapTool(Tool):
             # Update manifest
             if manifest is not None and action in ["created", "updated", "would_create", "would_update", "skipped"]:
                 url_lastmod = url_lastmod_map.get(url) if url_lastmod_map else None
+                url_etag = url_etag_map.get(url) if url_etag_map else None
                 doc_id = result.get("doc_id")
                 content_hash = result.get("content_hash")
-                update_manifest_url(manifest, url, url_lastmod, content_hash, doc_id)
+                update_manifest_url(manifest, url, url_lastmod, content_hash, doc_id, etag=url_etag)
 
             # Yield progress
             yield self.create_text_message(format_progress_message(

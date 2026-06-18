@@ -52,7 +52,7 @@ def load_manifest(path: str) -> dict | None:
             manifest = json.load(f)
 
         # Schema validation - require essential fields
-        if manifest.get("version") != "1.0":
+        if manifest.get("version") not in ("1.0", "1.1"):
             return None
         if "urls" not in manifest or not isinstance(manifest["urls"], dict):
             return None
@@ -140,7 +140,7 @@ def create_manifest(
 ) -> dict:
     """Create a new empty manifest structure."""
     return {
-        "version": "1.0",
+        "version": "1.1",
         "sitemap_url": sitemap_url,
         "manual_urls": manual_urls,
         "dataset_id": dataset_id,
@@ -158,13 +158,15 @@ def create_manifest(
 
 def update_manifest_url(
     manifest: dict, url: str, lastmod: str | None,
-    content_hash: str | None, doc_id: str | None
+    content_hash: str | None, doc_id: str | None,
+    etag: str | None = None
 ) -> None:
     """Update or add a URL entry in the manifest."""
     normalized = normalize_url(url)
     manifest["urls"][normalized] = {
         "url": url,
         "lastmod": lastmod,
+        "etag": etag,
         "content_hash": content_hash,
         "doc_id": doc_id,
         "synced_at": generate_sync_timestamp()
@@ -185,29 +187,38 @@ def finalize_manifest(manifest: dict, urls_processed: int) -> None:
 
 
 def compute_incremental_diff(
-    manifest: dict, current_sitemap: dict[str, str | None]
+    manifest: dict, current_sitemap: dict[str, dict | str | None]
 ) -> dict:
     """Compute diff between manifest and current sitemap.
 
     Args:
         manifest: Loaded manifest from previous sync
-        current_sitemap: Current sitemap data {url: lastmod}
+        current_sitemap: Current sitemap data. Either:
+            - {url: lastmod} (legacy: lastmod string only, no etag)
+            - {url: {"lastmod": ..., "etag": ...}} (v1.1: full probe data)
 
     Returns:
         dict with:
             - new_urls: set of normalized URLs (in sitemap, not in manifest)
-            - modified_urls: set of normalized URLs (lastmod changed)
+            - modified_urls: set of normalized URLs (lastmod or etag changed)
             - removed_urls: set of normalized URLs (in manifest, not in sitemap)
-            - unchanged_urls: set of normalized URLs (identical lastmod)
-            - url_data: dict mapping normalized URL to {url, lastmod}
+            - unchanged_urls: set of normalized URLs (all signals identical)
+            - url_data: dict mapping normalized URL to {url, lastmod, etag}
     """
     manifest_urls = set(manifest.get("urls", {}).keys())
 
-    # Normalize current sitemap URLs
+    # Normalize current sitemap URLs (accept legacy {url: lastmod} shape too)
     url_data: dict[str, dict] = {}
-    for url, lastmod in current_sitemap.items():
+    for url, payload in current_sitemap.items():
         normalized = normalize_url(url)
-        url_data[normalized] = {"url": url, "lastmod": lastmod}
+        if isinstance(payload, dict):
+            url_data[normalized] = {
+                "url": url,
+                "lastmod": payload.get("lastmod"),
+                "etag": payload.get("etag"),
+            }
+        else:
+            url_data[normalized] = {"url": url, "lastmod": payload, "etag": None}
 
     current_urls = set(url_data.keys())
 
@@ -216,16 +227,27 @@ def compute_incremental_diff(
     removed_urls = manifest_urls - current_urls
     common_urls = current_urls & manifest_urls
 
-    # Check common URLs for modifications (lastmod changed)
+    # Check common URLs for modifications (lastmod OR etag changed)
     modified_urls: set[str] = set()
     unchanged_urls: set[str] = set()
 
     for normalized in common_urls:
-        current_lastmod = url_data[normalized].get("lastmod")
+        current = url_data[normalized]
         manifest_entry = manifest["urls"].get(normalized, {})
         manifest_lastmod = manifest_entry.get("lastmod")
+        manifest_etag = manifest_entry.get("etag")
 
-        if current_lastmod != manifest_lastmod:
+        current_lastmod = current.get("lastmod")
+        current_etag = current.get("etag")
+
+        # If the current probe returned no signal at all, we cannot prove
+        # unchanged: treat as modified so content-hash comparison runs.
+        if current_lastmod is None and current_etag is None:
+            modified_urls.add(normalized)
+            continue
+
+        # Any signal mismatch => modified
+        if current_lastmod != manifest_lastmod or current_etag != manifest_etag:
             modified_urls.add(normalized)
         else:
             unchanged_urls.add(normalized)

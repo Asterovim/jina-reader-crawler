@@ -6,7 +6,11 @@ Handles URL normalization, hashing for duplicate detection, and document naming.
 import hashlib
 import re
 import unicodedata
+from email.utils import parsedate_to_datetime
+from typing import Any
 from urllib.parse import unquote, urlparse
+
+import requests
 
 # 12 hex chars = 48 bits = ~281 trillion unique values
 # Collision probability (Birthday Paradox): negligible for any realistic KB size
@@ -152,4 +156,60 @@ def parse_manual_urls(text: str) -> list[str]:
             seen.add(url)
             unique.append(url)
     return unique
+
+
+def probe_head_lastmod(
+    url: str, timeout: int = 30, user_agent: str | None = None
+) -> dict[str, Any]:
+    """Probe a single URL with HEAD to extract Last-Modified and ETag.
+
+    Falls back to GET (streamed, immediately closed) if HEAD returns 405/501
+    or other method-not-supported status.
+
+    Args:
+        url: URL to probe.
+        timeout: Request timeout in seconds.
+        user_agent: Optional User-Agent override.
+
+    Returns:
+        Dict with keys:
+            - lastmod: ISO 8601 string or None
+            - etag: raw ETag header value (with or without W/ prefix) or None
+            - status_code: HTTP status (0 if request failed)
+            - error: error message string or None
+    """
+    headers = {"User-Agent": user_agent} if user_agent else {}
+    try:
+        resp = requests.head(
+            url, allow_redirects=True, timeout=timeout, headers=headers
+        )
+        if resp.status_code in (405, 501):
+            resp.close()
+            resp = requests.get(
+                url, allow_redirects=True, timeout=timeout,
+                headers=headers, stream=True,
+            )
+            resp.close()
+    except requests.RequestException as e:
+        return {"lastmod": None, "etag": None, "status_code": 0, "error": str(e)[:80]}
+
+    lastmod_raw = resp.headers.get("Last-Modified")
+    etag_raw = resp.headers.get("ETag")
+    lastmod_iso: str | None = None
+    if lastmod_raw:
+        try:
+            lastmod_iso = parsedate_to_datetime(lastmod_raw).isoformat()
+        except (TypeError, ValueError):
+            lastmod_iso = None
+    if etag_raw:
+        etag_raw = etag_raw.split(",", 1)[0].strip() or None
+    else:
+        etag_raw = None
+
+    return {
+        "lastmod": lastmod_iso,
+        "etag": etag_raw,
+        "status_code": resp.status_code,
+        "error": None,
+    }
 

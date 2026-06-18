@@ -106,6 +106,7 @@ Crawl all URLs from a sitemap and sync to your Knowledge Base. Supports resume f
 | `skip_existing` | No | false | Skip documents that already exist in KB |
 | `skip_duplicates` | No | true | Skip URLs with duplicate titles in this sync |
 | `use_lastmod_optimization` | No | false | Skip unchanged URLs using sitemap lastmod timestamps |
+| `probe_head_for_manual_urls` | No | true | Send HEAD to each manual URL to capture Last-Modified/ETag (enables incremental skipping of unchanged manual URLs, same mechanism as sitemap lastmod) |
 | `enable_incremental_sync` | No | false | ⚡⚡ Enable automatic incremental sync (90% faster for repeat syncs) |
 | `force_full_sync` | No | false | Force full sync, ignoring manifest |
 | `cleanup_removed` | No | false | Delete KB documents for URLs no longer in sitemap |

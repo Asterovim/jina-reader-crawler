@@ -46,6 +46,7 @@ def extract_parameters(tool_parameters: dict[str, Any], runtime: Any) -> dict[st
         "skip_existing": tool_parameters.get("skip_existing", False),
         "skip_duplicates": tool_parameters.get("skip_duplicates", True),
         "use_lastmod_optimization": tool_parameters.get("use_lastmod_optimization", False),
+        "probe_head_for_manual_urls": tool_parameters.get("probe_head_for_manual_urls", True),
 
         # Cleanup
         "cleanup_removed": tool_parameters.get("cleanup_removed", False),

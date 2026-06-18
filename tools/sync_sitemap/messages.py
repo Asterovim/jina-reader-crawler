@@ -74,6 +74,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "manifest_save_failed": "⚠️ Failed to save manifest: {error}\n",
         "summary_manifest_skipped": "⚡⚡ Manifest skipped: {count}\n",
         "estimated_time": "⏱️ Estimated time: ~{minutes} min (vs ~{full_minutes} min for full sync)\n",
+        "head_probe_summary": "🔍 HEAD probe: collected Last-Modified/ETag for {probed}/{total} URLs\n",
     },
     "fr": {
         "starting_sync": "🚀 Démarrage de la synchronisation depuis :\n{url}\n",
@@ -142,6 +143,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "manifest_save_failed": "⚠️ Échec de sauvegarde du manifest : {error}\n",
         "summary_manifest_skipped": "⚡⚡ Ignorés par manifest : {count}\n",
         "estimated_time": "⏱️ Temps estimé : ~{minutes} min (vs ~{full_minutes} min pour sync complète)\n",
+        "head_probe_summary": "🔍 Probe HEAD : Last-Modified/ETag collectés pour {probed}/{total} URLs\n",
     },
 }
 

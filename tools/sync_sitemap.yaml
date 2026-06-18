@@ -127,6 +127,18 @@ parameters:
     name: use_lastmod_optimization
     required: false
     type: boolean
+  - default: true
+    form: form
+    human_description:
+      en_US: "🔍 Probe each manual URL with HEAD to capture Last-Modified and ETag headers. Enables incremental skipping of unchanged manual URLs (same mechanism as sitemap lastmod). Set to false to skip HEAD requests and always crawl manual URLs (faster start, no skip optimization)."
+      zh_Hans: "🔍 对每个手动URL使用HEAD请求获取Last-Modified和ETag头。启用后可跳过未更改的手动URL（与站点地图lastmod机制相同）。设为false可跳过HEAD请求并始终爬取手动URL（启动更快，但无法跳过未更改的）。"
+    label:
+      en_US: Probe HEAD for Manual URLs (🔍 Faster resyncs)
+      zh_Hans: 为手动URL探测HEAD (🔍 更快的重新同步)
+    llm_description: "When enabled, send a HEAD request to each manual URL to collect Last-Modified and ETag, enabling incremental change detection similar to sitemap lastmod optimization."
+    name: probe_head_for_manual_urls
+    required: false
+    type: boolean
   - default: false
     form: form
     human_description:
